@@ -1,0 +1,6 @@
+[submodule "src/irobot_create_msgs"]
+	path = src/irobot_create_msgs
+	url = https://github.com/iRobotEducation/irobot_create_msgs.git
+[submodule "src/create3_examples"]
+	path = src/create3_examples
+	url = https://github.com/iRobotEducation/create3_examples.git
