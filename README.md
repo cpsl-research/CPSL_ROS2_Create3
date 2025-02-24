@@ -106,3 +106,9 @@ cd CPSL_ROS2_Create3
 source install/setup.bash
 ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args --remap /cmd_vel:=/cpslCreate3/cmd_vel
 ```
+
+### 4. Resetting the robot pose (say at a particular origin)
+If you want to reset the pose to a specific location, you can use the following service
+```
+ros2 service call /cpslCreate3/reset_pose irobot_create_msgs/srv/ResetPose "pose: {position: {x: 0, y: 0, z: 0}, orientation: {x: 0, y: 0, z: 0, w: 1}}"
+```
