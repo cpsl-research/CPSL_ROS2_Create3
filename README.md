@@ -112,3 +112,11 @@ If you want to reset the pose to a specific location, you can use the following 
 ```
 ros2 service call /cpslCreate3/reset_pose irobot_create_msgs/srv/ResetPose "pose: {position: {x: 0, y: 0, z: 0}, orientation: {x: 0, y: 0, z: 0, w: 1}}"
 ```
+
+### 5. Republishing the tf tree from the create3
+If you want to access the tf tree from the create3 on another server or device, you can run this simple node. It will republish the /tf topic on /forwarded_tf
+```
+cd CPSL_ROS2_Create3
+source install/setup.bash
+ros2 run tf_repub tf_repub.py
+```
