@@ -44,6 +44,13 @@ def launch_setup(context, *args, **kwargs):
             name='tf_repub',
             output='screen',
             parameters=[]
+        ),
+        Node(
+            package='odom_repub',
+            executable='odom_repub',
+            name='odom_repub',
+            output='screen',
+            parameters=[]
         )
     ])
 

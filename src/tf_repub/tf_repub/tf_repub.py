@@ -18,7 +18,7 @@ class TFRelay(Node):
         #setup the subscription to the tf frame
         self.subscription = self.create_subscription(
             TFMessage,
-            '/cpsl_ugv_1/tf',
+            '{}tf'.format(self.tf_prefix),
             self.tf_callback,
             1
         )
