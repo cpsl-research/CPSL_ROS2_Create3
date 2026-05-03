@@ -2,6 +2,7 @@ import rclpy
 from rclpy.node import Node
 from tf2_msgs.msg import TFMessage
 from geometry_msgs.msg import TransformStamped
+from copy import deepcopy
 
 class TFRelay(Node):
     def __init__(self):
@@ -33,9 +34,17 @@ class TFRelay(Node):
         t:TransformStamped = None
         for t in msg.transforms:
             if t.header.frame_id == 'odom' and t.child_frame_id == 'base_link':
-                t.header.frame_id = "{}odom".format(self.tf_prefix)
-                t.child_frame_id = "{}base_link".format(self.tf_prefix)
-                filtered_transforms.append(t)
+                # Create original odom -> base_link transformation
+                t_odom_base = deepcopy(t)
+                t_odom_base.header.frame_id = "{}odom".format(self.tf_prefix)
+                t_odom_base.child_frame_id = "{}base_link".format(self.tf_prefix)
+                filtered_transforms.append(t_odom_base)
+
+                # Create derived odom -> base_footprint transformation with Z=0.0
+                t_odom_footprint = deepcopy(t_odom_base)
+                t_odom_footprint.child_frame_id = "{}base_footprint".format(self.tf_prefix)
+                t_odom_footprint.transform.translation.z = 0.0
+                filtered_transforms.append(t_odom_footprint)
 
         if filtered_transforms:
             filtered_msg = TFMessage(transforms=filtered_transforms)
