@@ -29,6 +29,13 @@ This README covers just this repository plus the minimum needed to talk to a rob
 | `irobot_create_msgs` | submodule - iRobot's message/service/action definitions |
 | `create3_examples` | submodule - iRobot's example packages (coverage, teleop, lidar SLAM, ...) |
 
+Plus [`scripts/`](scripts/), which is not a ROS package:
+
+| Script | What it does |
+|---|---|
+| `configure_create3.py` | Reads, diffs and applies the robot's own web-UI configuration (ROS settings, RMW profile override, `ntp.conf`); idempotent |
+| `preflight_create3.sh` | Checks the five layers of the Create 3 link and names the one that is broken |
+
 ---
 
 ## Setup / Installation
@@ -149,8 +156,22 @@ See the [Create 3 Fast-DDS instructions](https://iroboteducation.github.io/creat
 
 ### 4. Configure the Create 3 itself
 
-Host-side setup alone is **not** sufficient. Open the robot's web interface at
-**`http://192.168.186.2`** and configure the following.
+Host-side setup alone is **not** sufficient. The robot keeps its own ROS 2 and networking
+configuration in flash, and it has to be set before the robot will ever appear in
+`ros2 node list`.
+
+**Scripted (recommended):** [`scripts/configure_create3.py`](scripts/) applies everything in
+this section over the robot's web UI, idempotently, and restarts the application for you:
+
+```bash
+cd scripts
+./configure_create3.py show                 # what the robot is set to now
+./configure_create3.py apply --dry-run      # what would change
+./configure_create3.py apply                # apply it
+```
+
+**By hand:** open the robot's web interface at **`http://192.168.186.2`** and configure the
+following.
 
 #### 4a. Application -> Configuration
 
@@ -217,6 +238,18 @@ enough** - use **Reboot robot**.
 
 ### 5. Verify the connection
 
+[`scripts/preflight_create3.sh`](scripts/) checks all five layers of the link -- host NIC,
+host ROS 2 environment, IP reachability, robot-side configuration, and actual DDS traffic --
+and names the one that is broken:
+
+```bash
+cd scripts
+./preflight_create3.sh
+```
+
+It exits non-zero if anything failed, so it also works as a gate at the top of a startup
+script. To check by hand instead:
+
 ```bash
 ping -c 3 192.168.186.2
 ros2 node list
@@ -252,10 +285,10 @@ explicitly:
 ros2 topic echo /cpsl_ugv_1/battery_state sensor_msgs/msg/BatteryState --once
 ```
 
-If `ros2 node list` is empty, check in this order: `FASTDDS_BUILTIN_TRANSPORTS` is unset, the
-robot's RMW override is set, the robot booted with the cable connected, and the robot
-application finished starting (`curl -s http://192.168.186.2/logs-raw | grep "Node created"`
-must reach `system_health`). The manual's troubleshooting section walks through each case.
+If `ros2 node list` is empty, run `scripts/preflight_create3.sh` -- it checks each of the
+usual causes in dependency order: `FASTDDS_BUILTIN_TRANSPORTS` is unset, the robot's RMW
+override is set, the robot booted with the cable connected, and the robot application
+finished starting. The manual's troubleshooting section walks through each case in detail.
 
 ---
 
