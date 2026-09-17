@@ -3,12 +3,15 @@
 <package format="3">
   <name>create3_bringup</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>Bringup for the CPSL iRobot Create 3: republishes a namespaced tf tree and odometry for the rest of the CPSL stack.</description>
   <maintainer email="david.hunt@duke.edu">cpsl</maintainer>
   <license>Apache-2.0</license>
 
   <depend>teleop_twist_keyboard</depend>
   <depend>tf_repub</depend>
+  <depend>odom_repub</depend>
+  <depend>nav2_common</depend>
+  <depend>irobot_create_msgs</depend>
   
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
