@@ -11,10 +11,60 @@ reproducible, and make diagnosing a silent link fast.
 
 | Script | What it does |
 |---|---|
+| `bootstrap_host.sh` | Prepares a fresh host: static IP on the robot link, chrony, Docker |
 | `configure_create3.py` | Reads, diffs and applies the robot's configuration over its web UI |
 | `preflight_create3.sh` | Walks the five layers of the link and names the one that is broken |
 
-Both are dependency-free: Python 3 standard library and coreutils only.
+All three are dependency-free: Python 3 standard library, bash and coreutils only.
+
+They run in order, and the order matters:
+
+```bash
+sudo ./bootstrap_host.sh        # host: static IP + chrony + Docker   (once per machine)
+./configure_create3.py apply    # robot: its own flash configuration
+cd .. && docker compose up -d   # the ROS 2 stack
+./scripts/preflight_create3.sh  # verify all five layers
+```
+
+`configure_create3.py` reaches the robot over IP, so the host must already hold its
+static address on the robot subnet. The robot also has no battery-backed clock and takes
+its time from the host. Neither the address nor the NTP server can come from a
+container, which is what `bootstrap_host.sh` is for.
+
+---
+
+## `bootstrap_host.sh`
+
+Prepares the three things a container cannot own, because they belong to the host kernel
+and the host's service manager:
+
+1. a static IP on the direct Ethernet link to the robot (a NetworkManager profile)
+2. chrony, serving time to the robot's subnet
+3. Docker and the `docker` group
+
+```bash
+./bootstrap_host.sh --dry-run          # print every change it would make
+sudo ./bootstrap_host.sh               # apply
+sudo ./bootstrap_host.sh --skip-docker # if Docker is managed some other way
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--iface NAME` | autodetect | Ethernet interface facing the robot |
+| `--host-ip IP` | `192.168.186.3` | this machine's address on the robot subnet |
+| `--robot-ip IP` | `192.168.186.2` | the robot's address |
+| `--con-name NAME` | `create3-wired` | NetworkManager profile to create |
+| `--skip-network`, `--skip-ntp`, `--skip-docker` | off | skip a section |
+| `-n`, `--dry-run` | off | show what would happen, change nothing |
+
+It is idempotent and conservative. Every mutating command is routed through one helper,
+so `--dry-run` is honest by construction rather than by remembering to guard each call
+site. If a network profile already provides the right address it is left alone rather
+than duplicated -- on a machine where netplan already manages the link, creating a second
+NetworkManager profile for the same interface would fight with the first.
+
+Interface autodetection looks for a wired interface that has carrier but no address yet,
+and declines rather than guessing if it cannot find one. Pass `--iface` in that case.
 
 ---
 

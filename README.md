@@ -33,12 +33,93 @@ Plus [`scripts/`](scripts/), which is not a ROS package:
 
 | Script | What it does |
 |---|---|
+| `bootstrap_host.sh` | Prepares a fresh host: static IP on the robot link, chrony, Docker |
 | `configure_create3.py` | Reads, diffs and applies the robot's own web-UI configuration (ROS settings, RMW profile override, `ntp.conf`); idempotent |
 | `preflight_create3.sh` | Checks the five layers of the Create 3 link and names the one that is broken |
 
+and the container definition:
+
+| File | What it does |
+|---|---|
+| `docker/Dockerfile` | ROS 2 + workspace dependencies + the built colcon workspace |
+| `docker-compose.yml` | `bringup`, plus `teleop` / `shell` / `preflight` tool services |
+| `docker-compose.dev.yml` | Override that builds from the host's `src/` instead of the image copy |
+
 ---
 
-## Setup / Installation
+## Quick start (Docker)
+
+Four commands on a machine that has never seen this robot:
+
+```bash
+git clone --recurse-submodules <this repo> && cd CPSL_ROS2_Create3
+
+sudo scripts/bootstrap_host.sh          # static IP + chrony + Docker   (once per machine)
+scripts/configure_create3.py apply      # the robot's own flash configuration
+docker compose up -d                    # the ROS 2 stack
+scripts/preflight_create3.sh            # verify all five layers
+```
+
+Run `scripts/bootstrap_host.sh --dry-run` first if you want to see exactly what it
+would change; it is idempotent and will not touch a network profile or a chrony
+configuration that already works.
+
+The ordering matters. `configure_create3.py` reaches the robot over IP, so the host
+needs its static address on the robot subnet before that step, and the robot needs an
+NTP server on the host because it has no battery-backed clock. Neither of those can
+come from a container, which is why step 0 exists.
+
+Then:
+
+```bash
+docker compose logs -f bringup                  # what the stack is doing
+docker compose run --rm teleop                  # drive it from the keyboard
+docker compose run --rm shell                   # a shell with ROS 2 + the workspace sourced
+docker compose run --rm preflight               # run the checks from INSIDE the container
+docker compose down                             # stop
+```
+
+### Why host networking
+
+`docker-compose.yml` sets `network_mode: host`, and that is a requirement rather than a
+preference. The Create 3 is a DDS participant on a different machine. On a bridge
+network the container advertises discovery locators containing its private `172.x`
+address, which the robot cannot route back to, and multicast discovery never leaves the
+bridge -- so the robot looks dead while every other check passes. `ipc: host` and
+`pid: host` are there so Fast DDS shared memory works between the containers and
+anything still running on the host.
+
+### Why this is worth containerising
+
+The host's `~/.bashrc` is a single global namespace shared by every ROS workload on the
+machine, and this stack has two with directly conflicting requirements:
+`FASTDDS_BUILTIN_TRANSPORTS=LARGE_DATA` is needed for pushing large point clouds to an
+edge server, and is fatal to the Create 3 link, which runs a ROS 2 Iron stack that will
+not negotiate it. One `.bashrc` cannot satisfy both. Compose gives each service its own
+environment, so the conflict stops being possible. The container entrypoint refuses to
+start if `LARGE_DATA` is set, rather than handing back a stack whose nodes and topics
+list normally while no message ever arrives.
+
+### Development
+
+To edit `src/` on the host without rebuilding the image each time:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm colcon   # rebuild
+```
+
+`build/` and `install/` are named volumes rather than bind mounts, deliberately: the
+host's own colcon tree was built against the host's ROS installation, and letting the
+container write over it produces artifacts that work in neither place.
+
+---
+
+## Native installation (without Docker)
+
+Use this if you would rather run the stack directly on the host. Steps 4 and 5 apply
+either way -- the robot's own configuration and the verification ladder are the same
+whether the ROS nodes run in a container or not.
 
 ### 1. Install ROS 2 Jazzy and dependencies
 

@@ -3,3 +3,5 @@ build/*
 log/*
 *.pyc
 *.vscode
+# local machine config; commit .env.example instead
+.env

@@ -1,0 +1,41 @@
+# Development override: build from the host's source tree instead of the copy
+# baked into the image, so editing a file does not mean rebuilding the image.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm colcon
+#
+# build/ and install/ are named volumes rather than bind mounts on purpose: the
+# host's own colcon tree was built against the host's ROS installation, and
+# letting the container write over it produces artifacts that work in neither
+# place.
+
+services:
+  bringup: &dev-mounts
+    volumes:
+      - ./src:/ws/src
+      - create3-build:/ws/build
+      - create3-install:/ws/install
+
+  teleop: *dev-mounts
+  shell: *dev-mounts
+
+  preflight:
+    volumes:
+      - ./src:/ws/src
+      - ./scripts:/ws/scripts:ro
+      - create3-build:/ws/build
+      - create3-install:/ws/install
+
+  # Rebuild the workspace into the named volumes after editing src/.
+  colcon:
+    extends:
+      service: shell
+    container_name: cpsl-create3-colcon
+    profiles: ["tools"]
+    tty: false
+    stdin_open: false
+    command: colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
+
+volumes:
+  create3-build:
+  create3-install:

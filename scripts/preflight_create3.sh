@@ -280,7 +280,13 @@ if ! command -v ros2 >/dev/null 2>&1; then
     warned "the ros2 CLI is not on PATH; skipping discovery checks"
 else
     NS="${NAMESPACE%/}"
+    # A cold process -- a freshly started container, say -- has no ros2 daemon and
+    # may see a partial graph on the first call. Retry once with an explicit spin
+    # window before believing an empty or short result.
     mapfile -t NODES < <(timeout 20 ros2 node list 2>/dev/null | grep "^${NS}/" | sort)
+    if [[ ${#NODES[@]} -lt 10 ]]; then
+        mapfile -t NODES < <(timeout 30 ros2 node list --spin-time 5 2>/dev/null | grep "^${NS}/" | sort)
+    fi
     mapfile -t EXPECTED < <(python3 -c "
 import sys; sys.path.insert(0,'$SCRIPT_DIR')
 from configure_create3 import EXPECTED_NODES
@@ -305,7 +311,7 @@ print('\n'.join(f'$NS/{n}' for n in EXPECTED_NODES))")
     fi
 
     if [[ ${#NODES[@]} -gt 0 ]]; then
-        NTOPICS="$(timeout 20 ros2 topic list 2>/dev/null | grep -c "^${NS}/" || true)"
+        NTOPICS="$(timeout 30 ros2 topic list --spin-time 5 2>/dev/null | grep -c "^${NS}/" || true)"
         [[ "${NTOPICS:-0}" -ge 20 ]] \
             && pass "$NTOPICS topics advertised under $NS" \
             || warned "only ${NTOPICS:-0} topics under $NS (expected 20+)"

@@ -1,0 +1,17 @@
+# colcon output: built against the host's ROS install, useless and large in the image
+build/
+install/
+log/
+
+# git metadata, including the submodules' own .git files
+.git/
+**/.git
+.gitmodules
+
+# editor / python leftovers
+**/__pycache__/
+**/*.pyc
+.vscode/
+
+# local backups
+*.bak-*

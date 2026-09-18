@@ -1,0 +1,93 @@
+# CPSL Create 3 ROS 2 stack.
+#
+# Prerequisites, in order (see scripts/README.md):
+#   1. scripts/bootstrap_host.sh        static IP on the robot subnet, chrony, docker
+#   2. scripts/configure_create3.py apply   the robot's own flash configuration
+#   3. docker compose up -d             this file
+#   4. scripts/preflight_create3.sh     verify all five layers of the link
+
+name: cpsl-create3
+
+x-create3-common: &create3-common
+  image: cpsl-create3:latest
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+    args:
+      ROS_DISTRO: ${ROS_DISTRO:-jazzy}
+      USER_UID: ${USER_UID:-1000}
+      USER_GID: ${USER_GID:-1000}
+
+  # host networking is REQUIRED, not stylistic. The Create 3 is a DDS
+  # participant on another machine. On a bridge network the container
+  # advertises SPDP locators containing its 172.x address, which the robot
+  # cannot route back to, and multicast discovery never leaves the bridge --
+  # so the robot appears to be dead while everything else looks fine.
+  network_mode: host
+  # Fast DDS uses shared memory between participants on the same host; these
+  # let the containers and anything running on the host see each other's
+  # segments instead of silently falling back to loopback UDP.
+  ipc: host
+  pid: host
+
+  environment:
+    ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+    ROS_AUTOMATIC_DISCOVERY_RANGE: ${ROS_AUTOMATIC_DISCOVERY_RANGE:-SUBNET}
+    RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
+    # FASTDDS_BUILTIN_TRANSPORTS is deliberately absent. Setting it to
+    # LARGE_DATA moves user data onto TCP, which the robot's ROS 2 Iron stack
+    # will not negotiate. The entrypoint refuses to start if it is set.
+    # Scoping it per-service like this is the whole point: a workload that
+    # needs LARGE_DATA can have it without breaking the robot link.
+
+  init: true
+
+services:
+  # The always-on service: republishes a namespaced tf tree and odometry for
+  # the rest of the CPSL stack.
+  bringup:
+    <<: *create3-common
+    container_name: cpsl-create3-bringup
+    restart: unless-stopped
+    command: >
+      ros2 launch create3_bringup create3_bringup.launch.py
+      namespace:=${CREATE3_NAMESPACE:-cpsl_ugv_1}
+
+  # Keyboard teleop. Needs a terminal, so run it on demand rather than up -d:
+  #   docker compose run --rm teleop
+  teleop:
+    <<: *create3-common
+    container_name: cpsl-create3-teleop
+    profiles: ["tools"]
+    stdin_open: true
+    tty: true
+    command: >
+      ros2 run teleop_twist_keyboard teleop_twist_keyboard
+      --ros-args --remap /cmd_vel:=/${CREATE3_NAMESPACE:-cpsl_ugv_1}/cmd_vel
+
+  # An interactive shell with ROS 2 and the workspace already sourced:
+  #   docker compose run --rm shell
+  shell:
+    <<: *create3-common
+    container_name: cpsl-create3-shell
+    profiles: ["tools"]
+    stdin_open: true
+    tty: true
+    command: bash
+
+  # Runs the preflight ladder from INSIDE the container, which answers the
+  # question that actually matters once you are containerised: can this
+  # container see the robot?  Running the same script on the host instead
+  # audits the host's environment. Both are useful; they are not the same check.
+  #   docker compose run --rm preflight
+  preflight:
+    <<: *create3-common
+    container_name: cpsl-create3-preflight
+    profiles: ["tools"]
+    volumes:
+      - ./scripts:/ws/scripts:ro
+    command: >
+      /ws/scripts/preflight_create3.sh
+      --robot ${CREATE3_ROBOT_IP:-192.168.186.2}
+      --nuc ${CREATE3_HOST_IP:-192.168.186.3}
+      --namespace /${CREATE3_NAMESPACE:-cpsl_ugv_1}
