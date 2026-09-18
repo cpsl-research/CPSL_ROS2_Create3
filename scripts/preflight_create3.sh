@@ -16,7 +16,9 @@
 #   ./preflight_create3.sh --quick         # skip the DDS discovery + live data checks
 #   ./preflight_create3.sh --robot IP --nuc IP --namespace /ns
 #
-# Exit status: 0 = every check passed, 1 = at least one FAIL.
+# Exit status: 0 = every check passed and a message was seen from the robot,
+#              1 = at least one FAIL,
+#              2 = inconclusive: nothing failed, but no robot message arrived.
 
 set -uo pipefail
 
@@ -169,6 +171,71 @@ if [[ -n "${FASTRTPS_DEFAULT_PROFILES_FILE:-}" ]]; then
     XMLF="${FASTRTPS_DEFAULT_PROFILES_FILE/#\~/$HOME}"
     if [[ -f "$XMLF" ]]; then
         pass "FASTRTPS_DEFAULT_PROFILES_FILE=$XMLF (exists)"
+
+        # A stale profile here is the quietest failure on this link, and the one
+        # most likely to burn a new user after the LARGE_DATA trap above. Fast DDS
+        # applies this file to every participant on the host, so a profile left
+        # over from another robot makes your OWN nodes invisible to `ros2 node
+        # list` -- the processes are alive, the robot still pings and serves its
+        # web UI, and nothing anywhere says the profile is to blame.
+        #
+        # These are text heuristics, NOT an XML parse. That is deliberate: the
+        # script is plain bash and also runs inside a minimal container, where
+        # neither xmllint nor a Python XML module can be assumed. So comments,
+        # exotic formatting or a namespace prefix can fool the matching below.
+        # For that reason both findings are warnings, never failures -- a profile
+        # is allowed to be unusual, and plenty of odd-looking ones work.
+
+        # (a) an initialPeersList that does not name the robot. A list that is
+        #     absent entirely is fine (default discovery applies); a list that
+        #     exists and names other machines instead is what goes wrong.
+        # Drop XML comments first, so a peers list someone commented out is not
+        # read as the live one: whole comments on one line go by substitution,
+        # and only what is left -- a real multi-line comment -- is deleted by
+        # range. Doing the range alone would be a bug: a sed range does not end
+        # on the line it starts on, so a one-line comment would swallow the whole
+        # rest of the file and silently disable both checks below.
+        PROFILE_TEXT="$(sed -e 's/<!--.*-->//g' -e '/<!--/,/-->/d' "$XMLF" 2>/dev/null)"
+        PEERS_BLOCK="$(printf '%s\n' "$PROFILE_TEXT" \
+            | sed -n '/<initialPeersList/,/<\/initialPeersList>/p')"
+        if [[ -n "$PEERS_BLOCK" ]]; then
+            PEER_ADDRS="$(printf '%s\n' "$PEERS_BLOCK" \
+                | grep -oE '<address>[^<]*</address>' \
+                | sed -e 's/<[^>]*>//g' -e 's/[[:space:]]//g' \
+                | tr '\n' ',' | sed 's/,$//')"
+            if [[ ",${PEER_ADDRS}," == *",${ROBOT_IP},"* ]]; then
+                pass "profile initialPeersList names the robot ($ROBOT_IP)"
+            else
+                warned "$XMLF: initialPeersList does not name the robot $ROBOT_IP (lists: ${PEER_ADDRS:-none})"
+                info "a profile from another network makes your own nodes invisible"
+                fix "point initialPeersList at $ROBOT_IP, or unset FASTRTPS_DEFAULT_PROFILES_FILE"
+            fi
+        fi
+
+        # (b) a locator list emptied with a bare <locator/>. That suppresses the
+        #     default locators for the list it appears in, so the participant
+        #     stops announcing or listening on the addresses it would otherwise
+        #     use -- discovery silently goes one-way.
+        EMPTY_LISTS="$(awk '
+            {
+                rest = $0
+                while (match(rest, /<[A-Za-z_][A-Za-z0-9_]*LocatorList[^>]*>/)) {
+                    tag = substr(rest, RSTART + 1, RLENGTH - 2)
+                    sub(/[[:space:]].*/, "", tag)
+                    cur = tag
+                    rest = substr(rest, RSTART + RLENGTH)
+                }
+            }
+            /<locator[[:space:]]*\/>/ {
+                name = (cur == "" ? "locator list" : cur)
+                if (!(name in seen)) { seen[name] = 1; print name }
+            }
+        ' <<<"$PROFILE_TEXT" | tr '\n' ',' | sed 's/,$//')"
+        if [[ -n "$EMPTY_LISTS" ]]; then
+            warned "$XMLF: empty <locator/> empties ${EMPTY_LISTS}"
+            info "an emptied locator list suppresses the default locators"
+            fix "delete the empty <locator/> element, or unset FASTRTPS_DEFAULT_PROFILES_FILE"
+        fi
     else
         fail "FASTRTPS_DEFAULT_PROFILES_FILE=$XMLF does not exist"
         fix "unset it, or create the file; a missing profile file is silently ignored"
@@ -288,12 +355,22 @@ if ! command -v ros2 >/dev/null 2>&1; then
     warned "the ros2 CLI is not on PATH; skipping discovery checks"
 else
     NS="${NAMESPACE%/}"
-    # A cold process -- a freshly started container, say -- has no ros2 daemon and
-    # may see a partial graph on the first call. Retry once with an explicit spin
-    # window before believing an empty or short result.
-    mapfile -t NODES < <(timeout 20 ros2 node list 2>/dev/null | grep "^${NS}/" | sort)
+    # --no-daemon is what makes this layer honest. A plain `ros2 node list` is
+    # answered by the long-lived ros2 daemon, which serves a graph cached from
+    # whatever DDS environment happened to start it -- so a shell with a broken
+    # profile or transport still gets a full, stale node list, and this layer
+    # reports PASS for an environment that cannot see the robot at all. The
+    # daemon is left alone rather than stopped: --no-daemon neither spawns nor
+    # uses one, so a stale daemon cannot taint these answers, and `ros2 daemon
+    # stop` would disrupt other terminals the user has open for no gain here.
+    #
+    # The cost is that every query now builds its own participant and has to
+    # discover the graph from cold, which needs an explicit --spin-time and can
+    # still come back short on the first try. Same retry idiom as before: do not
+    # believe an empty or short result until a longer spin has agreed with it.
+    mapfile -t NODES < <(timeout 20 ros2 node list --no-daemon --spin-time 3 2>/dev/null | grep "^${NS}/" | sort)
     if [[ ${#NODES[@]} -lt 10 ]]; then
-        mapfile -t NODES < <(timeout 30 ros2 node list --spin-time 5 2>/dev/null | grep "^${NS}/" | sort)
+        mapfile -t NODES < <(timeout 30 ros2 node list --no-daemon --spin-time 8 2>/dev/null | grep "^${NS}/" | sort)
     fi
     mapfile -t EXPECTED < <(python3 -c "
 import sys; sys.path.insert(0,'$SCRIPT_DIR')
@@ -319,7 +396,10 @@ print('\n'.join(f'$NS/{n}' for n in EXPECTED_NODES))")
     fi
 
     if [[ ${#NODES[@]} -gt 0 ]]; then
-        NTOPICS="$(timeout 30 ros2 topic list --spin-time 5 2>/dev/null | grep -c "^${NS}/" || true)"
+        NTOPICS="$(timeout 20 ros2 topic list --no-daemon --spin-time 3 2>/dev/null | grep -c "^${NS}/" || true)"
+        if [[ "${NTOPICS:-0}" -lt 20 ]]; then
+            NTOPICS="$(timeout 30 ros2 topic list --no-daemon --spin-time 8 2>/dev/null | grep -c "^${NS}/" || true)"
+        fi
         [[ "${NTOPICS:-0}" -ge 20 ]] \
             && pass "$NTOPICS topics advertised under $NS" \
             || warned "only ${NTOPICS:-0} topics under $NS (expected 20+)"
@@ -348,6 +428,11 @@ printf '%s%d passed%s' "$G" "$PASSED" "$Z"
 printf '\n'
 
 if [[ $FAILED -eq 0 ]]; then
+    # Nothing failed, but a warning can still be the thing that wastes the next
+    # afternoon -- a stale DDS profile warns here and breaks discovery later --
+    # so say so in the verdict instead of leaving it as a number in the counts.
+    [[ $WARNED -gt 0 ]] && \
+        printf '%s%d warning(s) above did not fail this run; read them.%s\n' "$Y" "$WARNED" "$Z"
     if [[ "$QUICK" == "1" ]]; then
         printf 'Layers 1-4 passed. Layer 5 was skipped at your request (--quick).\n'
         exit 0

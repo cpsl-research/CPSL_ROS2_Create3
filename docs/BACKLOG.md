@@ -21,55 +21,7 @@ including what each fix was and how it was tested, is in the history of this fil
 
 ## 1. Correctness
 
-### 1.1 Preflight layer 5 trusts the ROS 2 daemon and can report a false PASS — `TODO`
-
-`scripts/preflight_create3.sh:286` uses plain `ros2 node list`, which is answered
-from the long-lived `ros2` daemon. The daemon keeps serving a cached, healthy
-graph regardless of the current shell's DDS environment, so with
-`FASTDDS_BUILTIN_TRANSPORTS=LARGE_DATA` set the script reports:
-
-```
-[PASS] all 10 expected nodes discovered under /cpsl_ugv_1   <- false
-[PASS] 25 topics advertised under /cpsl_ugv_1               <- false
-[FAIL] no message received on /cpsl_ugv_1/battery_state within 12s
-```
-
-The overall verdict was still correct because the data checks caught it, which is
-why they exist. Adding `--no-daemon` to the node and topic queries would make the
-layer honest rather than accidentally right. Consider also `ros2 daemon stop`.
-
-Small, self-contained: two query sites, plus a re-run of the four preflight modes.
-
-### 1.2 Preflight does not validate `FASTRTPS_DEFAULT_PROFILES_FILE` contents — `TODO`
-
-The script checks only that the file exists. A stale profile silently breaks
-discovery of your **own** nodes while the robot still looks reachable.
-
-Observed on this host, where `~/.bashrc` sets
-`FASTRTPS_DEFAULT_PROFILES_FILE=~/fastdds_nuc.xml` and that file names an
-unrelated `192.168.0.30` in `initialPeersList` with an emptied metatraffic
-multicast locator list:
-
-```
-$ ros2 launch create3_bringup create3_bringup.launch.py namespace:=cpsl_ugv_1
-[INFO] [tf_repub-1]: process started
-$ ros2 node list --no-daemon --spin-time 10 | grep -c repub
-0                                    # processes alive, invisible
-
-$ unset FASTRTPS_DEFAULT_PROFILES_FILE
-$ ros2 node list --no-daemon --spin-time 10 | grep repub
-/cpsl_ugv_1/odom_repub
-/cpsl_ugv_1/tf_repub
-```
-
-Preflight reports `[PASS] FASTRTPS_DEFAULT_PROFILES_FILE=... (exists)` throughout.
-It should parse the profile and warn when `initialPeersList` does not name the
-robot, or when the metatraffic locator list is emptied. Rated the single most
-likely thing to burn a new user after `LARGE_DATA`.
-
-Depends on **5.2** — decide whether the native path needs a profile at all first.
-
-### 1.3 `tf_repub` and `odom_repub` emit frame IDs with a leading slash — `DEFERRED`
+### 1.1 `tf_repub` and `odom_repub` emit frame IDs with a leading slash — `DEFERRED`
 
 `src/tf_repub/tf_repub/tf_repub.py:12-17` (and `src/odom_repub/odom_repub/odom_repub.py:40-41`)
 
@@ -237,35 +189,65 @@ shared file needs to be a second `--env-file`, or the token moved.
 Keep any custom domain ID in **0–101** on Linux, or DDS port math collides with
 the ephemeral port range.
 
-### 5.2 Legacy `~/fastdds_nuc.xml` and `ROS_STATIC_PEERS` entries — `TODO`
+### 5.2 Host netplan / NetworkManager cleanup — `TODO` (needs a root shell)
 
-`~/.bashrc` still sets `FASTRTPS_DEFAULT_PROFILES_FILE=~/fastdds_nuc.xml`, whose
-`initialPeersList` names an unreachable `192.168.0.30` — see 1.2 for what this
-breaks. `ROS_STATIC_PEERS` also lists `192.168.0.30`, `david_laptop` and `ugv_1`,
-which resolve to nothing on this machine. The containers deliberately do not set
-either variable, so only the native path is affected.
+Three things, all requiring `sudo`, which this session cannot run. Evidence was
+gathered read-only on 2026-09-18; the commands below are exact but unexecuted.
 
-Decide whether the native path needs a profile at all. If not, unset it; the
-environment variables alone are sufficient.
+**(a) Stale netplan file, confirmed to fail parsing at every boot.** From this
+boot's journal:
 
-### 5.3 Stale netplan file causes a boot-time parse error — `TODO`
+```
+NetworkManager[1000]: /etc/netplan/90-NM-7e326732-021e-346b-95c6-db9fe06a6090.yaml:9:7:
+  Error in network definition: invalid prefix length in address '192.168.186.2/0'
+```
 
-`/etc/netplan/90-NM-7e326732-021e-346b-95c6-db9fe06a6090.yaml` contains an invalid
-`192.168.186.2/0`. Needs a root shell to inspect and remove. Harmless today
-because the NetworkManager profile itself is correct.
+Note the address: `192.168.186.2` is the **robot's** IP, which this file tried to
+assign to the NUC. It is an orphan — the live robot-link connection is named
+`netplan-NM-7e326732-...` but carries UUID `7bf43790-fe90-3734-bbd9-d92b10519858`
+and is backed by `90-NM-7bf43790-...yaml`. Nothing depends on the broken file; it
+cannot have produced a connection, because it does not parse.
 
-### 5.4 `ipv4.never-default` is `no` on the robot link profile — `TODO`
+```bash
+sudo cat /etc/netplan/90-NM-7e326732-021e-346b-95c6-db9fe06a6090.yaml   # look first
+sudo mv /etc/netplan/90-NM-7e326732-021e-346b-95c6-db9fe06a6090.yaml \
+        /root/netplan-orphan-7e326732.yaml.bak-20260918
+sudo netplan generate            # validates; does NOT touch the running network
+```
 
-`bootstrap_host.sh` flags this. The profile has no gateway so no default route is
-installed today, but a default route over the robot link would send this machine's
-internet traffic at a robot that cannot forward it.
+Prefer `netplan generate` over `netplan apply` — `apply` can bounce the wifi this
+machine is reached over. The removal takes effect at the next boot either way.
+Afterwards confirm `ip -4 addr show enp3s0` still shows `192.168.186.3/24`.
+
+**(b) Netplan permissions warning, same journal, not previously noticed:**
+
+```
+generate[1000]: Permissions for /etc/netplan/01-network-manager-all.yaml are too open.
+  Netplan configuration should NOT be accessible by others.
+```
+
+It is `0644`; every other file in that directory is `0600`. `sudo chmod 600
+/etc/netplan/01-network-manager-all.yaml`.
+
+**(c) `ipv4.never-default` is `no` on the robot link profile.** Confirmed via
+`nmcli`: `ipv4.method: manual`, `ipv4.addresses: 192.168.186.3/24`,
+`ipv4.gateway: --`, `ipv4.never-default: no`. The only default route today is
+`default via 10.197.0.1 dev wlp1s0`, so this is latent, not active — but a
+default route over the robot link would send this machine's internet traffic at a
+robot that cannot forward it.
 
 ```bash
 sudo nmcli connection modify netplan-NM-7e326732-021e-346b-95c6-db9fe06a6090 \
   ipv4.never-default yes
 ```
 
-### 5.5 Untracked backup file in `CPSL_Manuals` — `TODO`
+The connection name really does contain `7e326732` despite the UUID mismatch in
+(a) — that is its name, not its UUID. Caveat: this profile is netplan-managed, so
+`nmcli modify` will rewrite the keyfile and regenerate netplan's copy. Do (a)
+first, then this, then check `nmcli -f ipv4.never-default connection show
+netplan-NM-7e326732-021e-346b-95c6-db9fe06a6090` reads `yes`.
+
+### 5.3 Untracked backup file in `CPSL_Manuals` — `TODO`
 
 `UGVs/iRobotCreate3_Hardware.md.bak-20260917` is an untracked leftover. The
 original is in git history, so it is redundant. (`README.md.bak-20260917` in this

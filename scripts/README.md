@@ -93,8 +93,23 @@ variable in `~/.bashrc`.
 ./preflight_create3.sh --robot 192.168.186.2 --nuc 192.168.186.3 --namespace /cpsl_ugv_1
 ```
 
-Exit status is 0 only if every check passed, so it also works as a gate in a startup
-script.
+Exit status, so it also works as a gate in a startup script:
+
+| | |
+|---|---|
+| `0` | every check passed **and** a message was received from the robot |
+| `1` | at least one check failed |
+| `2` | inconclusive — nothing failed, but no message ever arrived, so the link is not confirmed |
+
+Exit 2 is what you get on a host with Docker but no ROS 2, where layer 5 has to be
+skipped: the checks that ran are green, but the one that proves data actually flows
+never ran. Treat it as "unknown", not "fine", and re-run the checks in the container
+with `docker compose run --rm preflight`. `--quick` exits 0 when layers 1-4 pass,
+since skipping layer 5 there is your own choice rather than a missing tool.
+
+Warnings never change the exit status, but layer 2 can warn about a stale
+`FASTRTPS_DEFAULT_PROFILES_FILE`, which breaks discovery of your *own* nodes while
+leaving the robot reachable — read them.
 
 What each layer covers:
 
