@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CPSL Create 3</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><text y='52' font-size='52'>🤖</text></svg>">
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="dot" id="conn-dot"></span>
+    <strong id="ns">create 3</strong>
+    <span class="muted" id="conn-text">connecting…</span>
+  </div>
+  <button id="estop" class="estop">E-STOP</button>
+</header>
+
+<main>
+  <section class="tiles">
+    <div class="tile" id="tile-battery">
+      <h2>Battery</h2>
+      <div class="big"><span id="bat-pct">--</span><span class="unit">%</span></div>
+      <div class="bar"><i id="bat-bar"></i></div>
+      <div class="sub"><span id="bat-v">-- V</span> · <span id="bat-state">--</span></div>
+    </div>
+
+    <div class="tile" id="tile-dock">
+      <h2>Dock</h2>
+      <div class="big" id="dock-state">--</div>
+      <div class="sub" id="dock-visible">--</div>
+      <div class="row">
+        <button id="btn-undock" class="act">Undock</button>
+        <button id="btn-dock" class="act">Dock</button>
+      </div>
+      <div class="sub" id="action-state"></div>
+    </div>
+
+    <div class="tile" id="tile-motion">
+      <h2>Motion</h2>
+      <div class="kv"><span>x</span><b id="od-x">--</b></div>
+      <div class="kv"><span>y</span><b id="od-y">--</b></div>
+      <div class="kv"><span>yaw</span><b id="od-yaw">--</b></div>
+      <div class="kv"><span>v</span><b id="od-vx">--</b></div>
+      <div class="kv"><span>ω</span><b id="od-wz">--</b></div>
+    </div>
+
+    <div class="tile" id="tile-safety">
+      <h2>Safety</h2>
+      <div class="big" id="safety-state">--</div>
+      <div class="chips" id="hazard-chips"></div>
+      <div class="sub" id="wheel-state">--</div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Position</h2>
+      <button id="btn-trail" class="ghost">Clear trail</button>
+    </div>
+    <canvas id="trail" width="720" height="320"></canvas>
+    <div class="sub" id="trail-scale">--</div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Control</h2>
+      <button id="btn-control" class="ghost">Take control</button>
+    </div>
+    <div class="control-state sub" id="control-state">read-only</div>
+
+    <div class="drive">
+      <div class="pad">
+        <button class="key" data-k="w" style="grid-area:f">W</button>
+        <button class="key" data-k="a" style="grid-area:l">A</button>
+        <button class="key" data-k="s" style="grid-area:b">S</button>
+        <button class="key" data-k="d" style="grid-area:r">D</button>
+        <button class="key stop" data-k=" " style="grid-area:c">STOP</button>
+      </div>
+      <div class="sliders">
+        <label>Speed <output id="out-lin">0.15</output> m/s
+          <input type="range" id="sl-lin" min="0.02" max="0.31" step="0.01" value="0.15">
+        </label>
+        <label>Turn <output id="out-ang">0.80</output> rad/s
+          <input type="range" id="sl-ang" min="0.10" max="1.90" step="0.05" value="0.80">
+        </label>
+        <div class="sub">Hold <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or the arrow keys. <kbd>Space</kbd> stops.</div>
+        <div class="sub cmd" id="cmd-echo">cmd 0.00 / 0.00</div>
+      </div>
+    </div>
+  </section>
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Robot setup &amp; diagnostics</h2>
+      <div class="row" style="margin:0">
+        <button id="btn-refresh-cfg" class="ghost">Refresh</button>
+        <button id="btn-preflight" class="ghost">Run preflight</button>
+      </div>
+    </div>
+    <div class="cfg" id="cfg-grid"><span class="sub">loading…</span></div>
+    <div class="row">
+      <button id="btn-restart-ntpd" class="ghost">Restart ntpd</button>
+      <button id="btn-restart-app" class="ghost">Restart application</button>
+      <button id="btn-reboot" class="ghost danger">Reboot robot</button>
+    </div>
+    <div class="sub" id="admin-msg"></div>
+    <div id="preflight-out"></div>
+  </section>
+
+</main>
+
+<footer class="sub" id="foot">—</footer>
+<script src="/static/app.js"></script>
+</body>
+</html>

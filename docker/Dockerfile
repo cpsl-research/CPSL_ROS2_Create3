@@ -28,9 +28,13 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 #   teleop_twist_keyboard  - create3_bringup + the teleop service
 #   nav2_common            - RewrittenYaml, used by create3_bringup's launch file
 #   rplidar_ros            - create3_examples/create3_lidar_slam
+#   fastapi/uvicorn/websockets - create3_web's browser GUI
 RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-colcon-common-extensions \
         python3-rosdep \
+        python3-fastapi \
+        python3-uvicorn \
+        python3-websockets \
         ros-${ROS_DISTRO}-rmw-fastrtps-cpp \
         ros-${ROS_DISTRO}-teleop-twist-keyboard \
         ros-${ROS_DISTRO}-nav2-common \

@@ -53,6 +53,33 @@ services:
       ros2 launch create3_bringup create3_bringup.launch.py
       namespace:=${CREATE3_NAMESPACE:-cpsl_ugv_1}
 
+  # Browser GUI: live telemetry, dock/undock, and keyboard teleop, served at
+  # http://<this host>:8080/ . It is an ordinary DDS participant like any other
+  # node, so it needs no special wiring to the bringup service -- they find each
+  # other over the same host network.
+  #
+  # CREATE3_WEB_TOKEN is empty by default, which leaves the page open to anyone
+  # who can reach the port. Set it in .env on any shared network.
+  web:
+    <<: *create3-common
+    container_name: cpsl-create3-web
+    restart: unless-stopped
+    environment:
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      ROS_AUTOMATIC_DISCOVERY_RANGE: ${ROS_AUTOMATIC_DISCOVERY_RANGE:-SUBNET}
+      RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
+      CREATE3_NAMESPACE: ${CREATE3_NAMESPACE:-cpsl_ugv_1}
+      CREATE3_WEB_PORT: ${CREATE3_WEB_PORT:-8080}
+      CREATE3_WEB_TOKEN: ${CREATE3_WEB_TOKEN:-}
+      CREATE3_WEB_MAX_LINEAR: ${CREATE3_WEB_MAX_LINEAR:-0.31}
+      CREATE3_WEB_MAX_ANGULAR: ${CREATE3_WEB_MAX_ANGULAR:-1.90}
+      CREATE3_ROBOT_IP: ${CREATE3_ROBOT_IP:-192.168.186.2}
+      CREATE3_HOST_IP: ${CREATE3_HOST_IP:-192.168.186.3}
+    # The setup scripts back the GUI's diagnostics panel.
+    volumes:
+      - ./scripts:/ws/scripts:ro
+    command: ros2 run create3_web create3_web
+
   # Keyboard teleop. Needs a terminal, so run it on demand rather than up -d:
   #   docker compose run --rm teleop
   teleop:

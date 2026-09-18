@@ -27,6 +27,7 @@ This README covers just this repository plus the minimum needed to talk to a rob
 | `tf_repub` | Subscribes to `<ns>/tf`, rewrites `odom -> base_link` with a namespace prefix, adds a derived `base_footprint` (z = 0), republishes on `/tf` |
 | `odom_repub` | Subscribes to `<ns>/odom`, rewrites the frame IDs with a namespace prefix, republishes on `<ns>/odom_repub` |
 | `irobot_create_msgs` | submodule - iRobot's message/service/action definitions |
+| `create3_web` | Browser GUI: live telemetry, dock/undock, keyboard teleop, diagnostics ([docs](src/create3_web/README.md)) |
 | `create3_examples` | submodule - iRobot's example packages (coverage, teleop, lidar SLAM, ...) |
 
 Plus [`scripts/`](scripts/), which is not a ROS package:
@@ -73,11 +74,27 @@ Then:
 
 ```bash
 docker compose logs -f bringup                  # what the stack is doing
-docker compose run --rm teleop                  # drive it from the keyboard
+docker compose run --rm teleop                  # drive it from a terminal
 docker compose run --rm shell                   # a shell with ROS 2 + the workspace sourced
 docker compose run --rm preflight               # run the checks from INSIDE the container
 docker compose down                             # stop
 ```
+
+### Web GUI
+
+`docker compose up -d` also starts a browser GUI at **`http://<this host>:8080/`**:
+battery, dock state, odometry with a position trail, hazards, dock/undock buttons,
+keyboard teleop, and a diagnostics panel that runs the setup scripts from the page.
+
+It is meant to replace reaching for a remote desktop. A NoMachine or VNC session
+costs roughly 1-10 Mbit/s and needs a desktop on the host; this pushes a JSON
+snapshot at 10 Hz, on the order of 5 KB/s, and works on a phone.
+
+> There is **no authentication** unless you set `CREATE3_WEB_TOKEN` in `.env`.
+> Anyone who can reach port 8080 can drive the robot.
+
+See [`src/create3_web/README.md`](src/create3_web/README.md) for the safety model
+(velocity deadman, single-driver lock, speed caps, e-stop) and the HTTP interface.
 
 ### Why host networking
 
