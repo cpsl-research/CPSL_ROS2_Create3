@@ -1,7 +1,8 @@
 # Create 3 setup and diagnostic scripts
 
-Two scripts that automate the parts of the Create 3 setup that live **on the robot**
-rather than in this repository.
+Three scripts that automate the parts of the Create 3 setup that live outside this
+repository's source tree: one prepares **the host**, one configures **the robot**,
+and one diagnoses the link between them.
 
 The Create 3 stores its ROS 2 and networking configuration in its own flash. None of it
 is in this repo, in a dotfile, or in a container image, so a robot that has been factory
@@ -9,22 +10,32 @@ reset, re-flashed, or swapped for a spare needs all of it re-entered through the
 before it will ever appear in `ros2 node list`. These scripts make that configuration
 reproducible, and make diagnosing a silent link fast.
 
-| Script | What it does |
-|---|---|
-| `bootstrap_host.sh` | Prepares a fresh host: static IP on the robot link, chrony, Docker |
-| `configure_create3.py` | Reads, diffs and applies the robot's configuration over its web UI |
-| `preflight_create3.sh` | Walks the five layers of the link and names the one that is broken |
+| Script | Acts on | What it does |
+|---|---|---|
+| `bootstrap_host.sh` | **the host** | Prepares a fresh host: static IP on the robot link, chrony, Docker |
+| `configure_create3.py` | the robot | Reads, diffs and applies the robot's configuration over its web UI |
+| `preflight_create3.sh` | both | Walks the five layers of the link and names the one that is broken |
 
-All three are dependency-free: Python 3 standard library, bash and coreutils only.
+They need no Python packages beyond the standard library and no ROS build, but they
+are not free of external commands. `bootstrap_host.sh` needs **`nmcli`** — so a
+NetworkManager-managed host — plus `ip`, `systemctl` and `apt-get`.
+`preflight_create3.sh` needs **`ip`**, **`ping`** and **`curl`**, and **`ros2`** for
+layer 5. That is exactly why `docker/Dockerfile` apt-installs `iputils-ping`,
+`iproute2` and `curl`: without them the in-container preflight cannot run.
 
 They run in order, and the order matters:
 
 ```bash
-sudo ./bootstrap_host.sh        # host: static IP + chrony + Docker   (once per machine)
-./configure_create3.py apply    # robot: its own flash configuration
-cd .. && docker compose up -d   # the ROS 2 stack
-./scripts/preflight_create3.sh  # verify all five layers
+sudo ./bootstrap_host.sh                   # host: static IP + chrony + Docker (once per machine)
+./configure_create3.py apply               # robot: its own flash configuration
+cd .. && docker compose up -d              # the ROS 2 stack
+docker compose run --rm preflight          # verify all five layers
 ```
+
+For a native (non-Docker) install, `bootstrap_host.sh --skip-docker` is the first
+step instead, and `./preflight_create3.sh` on the host is the right verification.
+Run the host copy only on a machine that actually has ROS 2: without it, layer 5
+is skipped and the script still reports a healthy link (see below).
 
 `configure_create3.py` reaches the robot over IP, so the host must already hold its
 static address on the robot subnet. The robot also has no battery-backed clock and takes
@@ -95,9 +106,20 @@ What each layer covers:
 | 4. Robot-side configuration | domain id / namespace / RMW agree with the host, discovery server off, RMW profile override names the host, `ntp.conf` points at the host, clock skew under 5 s |
 | 5. DDS discovery and live data | all ten robot nodes discovered, topic count, and a real message received on `battery_state` and `dock_status` |
 
-Layer 5 checking *data* and not just discovery is deliberate. A transport mismatch lets
-discovery succeed while no user data ever flows, so nodes and topics list normally and
-only an `echo` reveals the fault.
+Layer 5 checking *data* and not just discovery is deliberate, and it is the layer
+that catches `FASTDDS_BUILTIN_TRANSPORTS=LARGE_DATA`. A transport mismatch lets
+discovery succeed while no user data ever flows: **discovery gives you something,
+data gives you nothing.** Topic names are still advertised, and whether nodes are
+listed depends on whether the long-lived `ros2` daemon answers from its cache or
+the query goes to the network. So neither an empty nor a full `ros2 node list`
+settles it — only receiving a message does. `README.md` has the full table and
+the `--no-daemon` / `ros2 daemon stop` explanation.
+
+> **Layer 5 is skipped, not failed, when the `ros2` CLI is not on `PATH`** — it
+> reports `the ros2 CLI is not on PATH; skipping discovery checks` as a warning.
+> On a Docker-only host that means the script can print `The Create 3 link is
+> healthy` and exit 0 having never tested whether any data flows. On such a host
+> use `docker compose run --rm preflight` instead, which has ROS 2 inside it.
 
 Layer 2 also greps `~/.bashrc` itself, not just the current environment. An uncommented
 `export FASTDDS_BUILTIN_TRANSPORTS=LARGE_DATA` there will break the next terminal you

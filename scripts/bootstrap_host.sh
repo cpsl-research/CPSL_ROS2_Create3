@@ -225,15 +225,36 @@ if [[ $DRY_RUN == 1 ]]; then
 else
     printf '  %d change(s) applied.\n' "$CHANGES"
 fi
+# The next steps differ between the two supported paths, and --skip-docker is
+# the signal for which one this is: a native (from-source) install has no use
+# for Docker, so telling that user to run `docker compose up -d` is wrong.
+if [[ $DO_DOCKER == 1 ]]; then
 cat <<EOF
 
-Next:
-  1. Configure the robot itself:   scripts/configure_create3.py apply
-  2. Bring up the ROS 2 stack:     docker compose up -d
-  3. Verify the whole link:        scripts/preflight_create3.sh
+Next (Docker path):
+  1. Set an access token:          cp .env.example .env   # then CREATE3_WEB_TOKEN
+  2. Configure the robot itself:   scripts/configure_create3.py apply
+  3. Bring up the ROS 2 stack:     docker compose up -d
+  4. Verify the whole link:        docker compose run --rm preflight
 
-The robot must be powered on and connected by Ethernet before step 1, and it
-initialises its networking at boot -- if it was powered on without the cable,
-it needs a full reboot, not just an application restart:
+Verify from inside the container. Running scripts/preflight_create3.sh on a host
+with no ROS 2 installed skips the layer that proves data actually flows, and
+still reports a healthy link.
+EOF
+else
+cat <<EOF
+
+Next (native path -- Docker was skipped):
+  1. Set an access token:          cp .env.example .env   # then CREATE3_WEB_TOKEN
+  2. Configure the robot itself:   scripts/configure_create3.py apply
+  3. Build the workspace:          see "Native installation" in README.md
+  4. Verify the whole link:        scripts/preflight_create3.sh
+EOF
+fi
+cat <<EOF
+
+The robot must be powered on and connected by Ethernet before you configure it,
+and it initialises its networking at boot -- if it was powered on without the
+cable, it needs a full reboot, not just an application restart:
   scripts/configure_create3.py reboot
 EOF

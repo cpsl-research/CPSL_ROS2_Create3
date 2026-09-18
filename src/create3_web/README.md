@@ -17,17 +17,26 @@ It is a compose service, so it comes up with everything else:
 docker compose up -d          # bringup + web
 ```
 
-Then open **`http://<robot-host>:8080/`**.
+Then open **`http://<robot-host>:8080/?token=<token>`**. The token is required —
+see [Access control](#access-control) below.
 
-Natively, without Docker. The web dependencies are declared in `package.xml`, so
-rosdep installs them; the package builds without them but will not start:
+Natively, without Docker. The web dependencies (`fastapi`, `uvicorn`,
+`websockets`) are declared in `package.xml`; the package builds without them but
+will not start. Run this **from the workspace root** — `src` is relative to where
+you run it, and does not resolve from this package's directory:
 
 ```bash
-rosdep install --from-paths src --ignore-src -y     # python3-{fastapi,uvicorn,websockets}
+cd /path/to/CPSL_ROS2_Create3
+rosdep install -i --from-path src --rosdistro jazzy -y
 colcon build --packages-select create3_web
 source install/setup.bash
 ros2 launch create3_web create3_web.launch.py namespace:=cpsl_ugv_1
 ```
+
+The workspace's native path installs those three into a `uv`-managed virtualenv
+instead of system-wide, which needs one extra `PYTHONPATH` export to take effect.
+See "Native installation" in the [top-level README](../../README.md) — the node
+will start under either arrangement, but not with neither.
 
 ## What it shows
 
@@ -83,7 +92,9 @@ not.
 
 ## Configuration
 
-All settings come from the environment, so compose supplies them from `.env`:
+All settings come from the environment. Compose reads `.env` automatically; a
+native shell does not, so export them yourself first
+(`set -a; source .env; set +a`):
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -95,6 +106,13 @@ All settings come from the environment, so compose supplies them from `.env`:
 | `CREATE3_WEB_MAX_ANGULAR` | `1.90` | teleop angular cap, rad/s |
 | `CREATE3_WEB_TELEMETRY_HZ` | `10` | telemetry push rate |
 | `CREATE3_ROBOT_IP` / `CREATE3_HOST_IP` | `192.168.186.2` / `.3` | used by the diagnostics panel |
+| `CREATE3_SCRIPTS_DIR` | `/ws/scripts` | where the diagnostics panel looks for `configure_create3.py` and `preflight_create3.sh` |
+
+`CREATE3_SCRIPTS_DIR` only needs setting in unusual layouts. The default is the
+path compose mounts `scripts/` at inside the container; when that directory does
+not exist — running natively from a checkout, for instance — the node walks up
+from its own location to find `scripts/` and uses that instead. The panel degrades
+to "unavailable" rather than breaking the GUI if neither is found.
 
 ### Access control
 
@@ -121,11 +139,16 @@ docker compose up -d web      # pick up the change
 
 Then open `http://<host>:8080/?token=<token>`.
 
-Everything is gated: the page, `/api/*`, `/api/robot/*` and the websocket all
-return **401** without a valid token, and the token is compared in constant time.
-Static assets (`/static/*`) are deliberately not gated — the browser requests
-them from a `<script src>` that cannot carry the token, and they are inert
-JavaScript and CSS containing no robot data.
+Everything is gated: the page, `/api/*` and `/api/robot/*` return **401** without
+a valid token, and the websocket refuses the connection with close code **4401**.
+The token is compared with `secrets.compare_digest`, so it cannot be recovered by
+timing the response. Static assets (`/static/*`) are deliberately not gated — the
+browser requests them from a `<script src>` that cannot carry the token, and they
+are inert JavaScript and CSS containing no robot data.
+
+The token is accepted either as a `?token=` query parameter or as an
+**`X-Auth-Token`** header. The browser has to use the query parameter; scripts
+should prefer the header, which keeps the token out of the logs described below.
 
 **Leaving `CREATE3_WEB_TOKEN` empty disables authentication entirely.** That is
 supported for an isolated bench setup, and the node logs a warning at startup so
@@ -159,10 +182,14 @@ having it.
 | `GET` | `/api/robot/preflight` | the diagnostic ladder, structured |
 | `POST` | `/api/robot/restart-app`, `/api/robot/restart-ntpd`, `/api/robot/reboot` | robot control |
 
+Every path above except `/static/*` requires the token (see
+[Access control](#access-control)).
+
 `/api/state` makes this scriptable without a browser:
 
 ```bash
-curl -s localhost:8080/api/state | jq '.battery.percentage, .dock.is_docked'
+curl -s -H "X-Auth-Token: $CREATE3_WEB_TOKEN" localhost:8080/api/state \
+  | jq '.battery.percentage, .dock.is_docked'
 ```
 
 ## Design notes

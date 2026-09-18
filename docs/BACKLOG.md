@@ -63,7 +63,7 @@ later. Two things to settle when they are:
 
 Pre-existing; affects the Docker and native paths identically.
 
-### 1.2 `preflight_create3.sh` aborts when run from a shell without ROS — `TODO`
+### 1.2 `preflight_create3.sh` aborts when run from a shell without ROS — `DONE`
 
 `scripts/preflight_create3.sh` — `set -uo pipefail` (line 21) versus
 `source /opt/ros/jazzy/setup.bash` (line 111).
@@ -75,8 +75,41 @@ EXIT=1
 ```
 
 Layers 3, 4 and 5 never run, and the user gets a bash error instead of a
-diagnosis — in exactly the situation the script advertises that it handles. Fix
-by wrapping the source in `set +u` / `set -u`.
+diagnosis — in exactly the situation the script advertises that it handles.
+
+Fixed by wrapping the source in `set +u` / `set -u`. Verified: the same command
+now runs all five layers instead of aborting.
+
+Worth recording that the documentation pass reported this as "already fixed in
+code". It was not — the crash reproduced exactly as first described. The claim
+was checked before being believed.
+
+### 1.2b Preflight reported a healthy link without ever seeing a message — `DONE`
+
+The summary printed `The Create 3 link is healthy` and exited 0 whenever
+`FAILED -eq 0`. On a host with Docker but no ROS 2 — the stated point of
+containerising — layer 5 is skipped with a *warning*, and warnings do not affect
+the exit status. So the one layer that proves data actually flows was silently
+skipped and the script still reported success.
+
+That is the worst thing a diagnostic tool can do. It now tracks whether a message
+was genuinely received and refuses to claim health otherwise:
+
+```
+[WARN] the ros2 CLI is not on PATH; skipping discovery checks
+16 passed, 2 warning(s)
+Inconclusive: 16 checks passed, but no message was ever received
+from the robot, so the link is NOT confirmed working.
+If the ros2 CLI is unavailable here, run the checks in the container:
+  docker compose run --rm preflight
+exit=2
+```
+
+Exit 2 distinguishes "inconclusive" from pass (0) and fail (1). `--quick` still
+exits 0, since skipping layer 5 there is the operator's own choice.
+
+Verified against a simulated Docker-only host (`ubuntu:24.04`, host networking,
+no `/opt/ros`, `ros2` not on PATH).
 
 ### 1.3 Preflight layer 5 trusts the ROS 2 daemon and can report a false PASS — `TODO`
 
@@ -221,7 +254,7 @@ Options: add a `COLCON_IGNORE` to `src/create3_examples`, build with
 build argument. Then correct the Dockerfile comment, whose stated invariant has
 already been violated without anyone noticing.
 
-### 2b.5 Named volumes in dev mode are seeded once and never refreshed — `TODO`
+### 2b.5 Named volumes in dev mode are seeded once and never refreshed — `DONE`
 
 `/ws/install` is populated from the image when the volume is first created, then
 never again. After a `docker compose build`, the dev stack keeps running the old
@@ -237,7 +270,7 @@ inert JavaScript and CSS with no robot data, so this is accepted. Revisit if the
 GUI is ever exposed beyond a lab network — a cookie set on the authenticated `/`
 response would close it.
 
-### 2b.7 `CREATE3_SCRIPTS_DIR` is undocumented — `TODO`
+### 2b.7 `CREATE3_SCRIPTS_DIR` is undocumented — `DONE`
 
 `admin.py` reads it; the `src/create3_web/README.md` configuration table omits it.
 
@@ -245,7 +278,7 @@ response would close it.
 
 ## 3. Documentation defects
 
-### 3.1 The `LARGE_DATA` symptom table is wrong, and two documents contradict — `TODO`
+### 3.1 The `LARGE_DATA` symptom table is wrong, and two documents contradict — `DONE`
 
 `README.md` claims `LARGE_DATA` yields **0** discovered nodes, and directs the
 user to check for an empty `ros2 node list`. What actually happens:
@@ -277,7 +310,7 @@ gives you something, data gives you nothing.**
 Fix: drop the node-count table, describe the real signature, make
 `ros2 topic echo` the diagnostic, and explain the daemon.
 
-### 3.2 The native path omits host preparation entirely — `TODO`
+### 3.2 The native path omits host preparation entirely — `DONE`
 
 `README.md` says "Steps 4 and 5 apply either way", implying steps 1–3 are the
 complete native substitute for the Docker quick start. They are not: the Docker
@@ -290,13 +323,13 @@ Fix: the native section must start with `sudo scripts/bootstrap_host.sh --skip-d
 Also, that script's closing "Next:" text recommends `docker compose up -d`, which
 is wrong guidance for a native user — make it aware of which path is being set up.
 
-### 3.3 Stale RViz remap in Tutorial 6 — `TODO`
+### 3.3 Stale RViz remap in Tutorial 6 — `DONE`
 
 `README.md` shows `rviz2 --ros-args --remap /tf:=/forwarded_tf`. Nothing
 publishes `/forwarded_tf`; `tf_repub` publishes on `/tf`, as the same document
 says two sections earlier. Leftover from an older design.
 
-### 3.4 The native apt list is both redundant and incomplete — `TODO`
+### 3.4 The native apt list is both redundant and incomplete — `DONE`
 
 - Redundant: it installs `ros-jazzy-irobot-create-msgs` while
   `src/irobot_create_msgs` is a submodule built from source. Both end up
@@ -306,7 +339,7 @@ says two sections earlier. Leftover from an older design.
   `slam_toolbox` and `rplidar_ros`, pulled in by the `create3_examples`
   submodule.
 
-### 3.5 Brittle hard-coded topic count — `TODO`
+### 3.5 Brittle hard-coded topic count — `DONE`
 
 `README.md` says "expect 25 topics"; measured 25 and 26 depending on what else is
 attached. `preflight_create3.sh` sensibly asserts `>= 20`. Soften the prose.

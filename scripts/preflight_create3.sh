@@ -48,6 +48,8 @@ else
 fi
 
 PASSED=0; FAILED=0; WARNED=0
+# Whether layer 5 actually proved a message arrives from the robot.
+DATA_VERIFIED=0
 pass() { printf '  [%sPASS%s] %s\n' "$G" "$Z" "$1"; PASSED=$((PASSED+1)); }
 fail() { printf '  [%sFAIL%s] %s\n' "$R" "$Z" "$1"; FAILED=$((FAILED+1)); }
 warned() { printf '  [%sWARN%s] %s\n' "$Y" "$Z" "$1"; WARNED=$((WARNED+1)); }
@@ -107,8 +109,14 @@ section "2. NUC ROS 2 environment"
 if [[ -z "${ROS_DISTRO:-}" ]]; then
     warned "no ROS 2 environment in the calling shell (ROS_DISTRO unset)"
     fix "source /opt/ros/jazzy/setup.bash  (normally done by ~/.bashrc)"
+    # ROS's setup.bash reads unset variables, which `set -u` treats as fatal --
+    # aborting the script in exactly the situation this branch exists to handle.
     # shellcheck disable=SC1091
-    [[ -f /opt/ros/jazzy/setup.bash ]] && source /opt/ros/jazzy/setup.bash
+    if [[ -f /opt/ros/jazzy/setup.bash ]]; then
+        set +u
+        source /opt/ros/jazzy/setup.bash
+        set -u
+    fi
 else
     pass "ROS_DISTRO=$ROS_DISTRO"
 fi
@@ -320,6 +328,7 @@ print('\n'.join(f'$NS/{n}' for n in EXPECTED_NODES))")
         # what a TCP/LARGE_DATA mismatch looks like -- so actually read a message.
         for t in battery_state dock_status; do
             if timeout 12 ros2 topic echo --once "$NS/$t" >/dev/null 2>&1; then
+                DATA_VERIFIED=1
                 pass "received a message on $NS/$t"
             else
                 fail "no message received on $NS/$t within 12s"
@@ -339,6 +348,21 @@ printf '%s%d passed%s' "$G" "$PASSED" "$Z"
 printf '\n'
 
 if [[ $FAILED -eq 0 ]]; then
+    if [[ "$QUICK" == "1" ]]; then
+        printf 'Layers 1-4 passed. Layer 5 was skipped at your request (--quick).\n'
+        exit 0
+    fi
+    # Reporting a healthy link having never seen a message is the worst thing
+    # this script could do, and it is exactly what happens on a host that has
+    # Docker but no ROS 2: layer 5 is skipped with a warning, and warnings do
+    # not affect the exit status.
+    if [[ $DATA_VERIFIED -eq 0 ]]; then
+        printf '%sInconclusive: %d checks passed, but no message was ever received\n' "$Y" "$PASSED"
+        printf 'from the robot, so the link is NOT confirmed working.%s\n' "$Z"
+        printf 'If the ros2 CLI is unavailable here, run the checks in the container:\n'
+        printf '  %sdocker compose run --rm preflight%s\n' "$B" "$Z"
+        exit 2
+    fi
     printf '%sThe Create 3 link is healthy.%s\n' "$G" "$Z"
     exit 0
 fi

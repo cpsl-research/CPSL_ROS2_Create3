@@ -5,3 +5,4 @@ log/*
 *.vscode
 # local machine config; commit .env.example instead
 .env
+.venv/

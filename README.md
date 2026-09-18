@@ -10,7 +10,7 @@ simulation.
 > The robot firmware runs Iron while the host runs Jazzy. They interoperate over plain
 > RTPS/UDP, but this mismatch causes two non-obvious requirements covered below: do **not**
 > set `FASTDDS_BUILTIN_TRANSPORTS=LARGE_DATA` on the host, and the robot needs an **Override
-> RMW Profile** entry. Both are in [step 4](#4-configure-the-create-3-itself).
+> RMW Profile** entry. Both are in [step 5](#5-configure-the-create-3-itself).
 
 For the full CPSL hardware setup - wiring, the NUC's static IP, chrony/NTP, day-to-day startup
 and an extensive troubleshooting guide - see
@@ -30,6 +30,14 @@ This README covers just this repository plus the minimum needed to talk to a rob
 | `create3_web` | Browser GUI: live telemetry, dock/undock, keyboard teleop, diagnostics ([docs](src/create3_web/README.md)) |
 | `create3_examples` | submodule - iRobot's example packages (coverage, teleop, lidar SLAM, ...) |
 
+`create3_examples` is a submodule that contains **six** packages of its own
+(`create3_coverage`, `create3_examples_msgs`, `create3_examples_py`,
+`create3_lidar_slam`, `create3_republisher`, `create3_teleop`), so a
+`--recurse-submodules` clone gives `colcon build` eleven packages, not five, and
+it builds all of them. It is also the only reason this workspace depends on
+`rplidar_ros`, `slam_toolbox`, `joy` and `teleop_twist_joy` - nothing in
+`create3_bringup` or `create3_web` needs them.
+
 Plus [`scripts/`](scripts/), which is not a ROS package:
 
 | Script | What it does |
@@ -43,22 +51,32 @@ and the container definition:
 | File | What it does |
 |---|---|
 | `docker/Dockerfile` | ROS 2 + workspace dependencies + the built colcon workspace |
-| `docker-compose.yml` | `bringup`, plus `teleop` / `shell` / `preflight` tool services |
+| `docker-compose.yml` | the always-on `bringup` and `web` services, plus `teleop` / `shell` / `preflight` tool services |
 | `docker-compose.dev.yml` | Override that builds from the host's `src/` instead of the image copy |
 
 ---
 
 ## Quick start (Docker)
 
-Four commands on a machine that has never seen this robot:
+On a machine that has never seen this robot:
 
 ```bash
 git clone --recurse-submodules <this repo> && cd CPSL_ROS2_Create3
 
+cp .env.example .env                    # then set CREATE3_WEB_TOKEN -- see below
 sudo scripts/bootstrap_host.sh          # static IP + chrony + Docker   (once per machine)
 scripts/configure_create3.py apply      # the robot's own flash configuration
 docker compose up -d                    # the ROS 2 stack
-scripts/preflight_create3.sh            # verify all five layers
+docker compose run --rm preflight       # verify all five layers
+```
+
+`cp .env.example .env` is not optional. The web GUI ships with authentication on
+and **refuses every request without a token**, so until `CREATE3_WEB_TOKEN` is
+set the page returns 401. Generate one and put it in `.env`:
+
+```bash
+python3 -c "import secrets; print(secrets.token_urlsafe(24))"   # into CREATE3_WEB_TOKEN
+chmod 600 .env
 ```
 
 Run `scripts/bootstrap_host.sh --dry-run` first if you want to see exactly what it
@@ -68,7 +86,17 @@ configuration that already works.
 The ordering matters. `configure_create3.py` reaches the robot over IP, so the host
 needs its static address on the robot subnet before that step, and the robot needs an
 NTP server on the host because it has no battery-backed clock. Neither of those can
-come from a container, which is why step 0 exists.
+come from a container, which is why `bootstrap_host.sh` exists.
+
+**Verify from inside the container, not from the host.** `docker compose run --rm
+preflight` is the right check for this path. The same script run on the host
+(`scripts/preflight_create3.sh`) audits the *host's* ROS 2 environment, and on a
+machine that only has Docker there is no such environment to audit: it warns
+`no ROS 2 environment in the calling shell`, skips layer 5 entirely -- the only
+layer that proves DDS data actually flows -- and then still prints
+`The Create 3 link is healthy` and exits 0. A green host preflight on a
+Docker-only machine means less than it looks like. Both invocations are useful
+on a machine that has ROS 2 installed; they are not the same check.
 
 Then:
 
@@ -76,31 +104,38 @@ Then:
 docker compose logs -f bringup                  # what the stack is doing
 docker compose run --rm teleop                  # drive it from a terminal
 docker compose run --rm shell                   # a shell with ROS 2 + the workspace sourced
-docker compose run --rm preflight               # run the checks from INSIDE the container
 docker compose down                             # stop
 ```
 
+> **If a check fails, suspect the terminal before you suspect the robot.** A shell
+> started before `~/.bashrc` was last corrected still holds the old exports --
+> `FASTDDS_BUILTIN_TRANSPORTS` above all. Editing `~/.bashrc` does not reach back
+> into terminals that are already open, and neither does an already-running `ros2`
+> daemon. Open a fresh terminal, or force a clean one:
+>
+> ```bash
+> env -i HOME=$HOME USER=$USER TERM=xterm bash -ilc 'scripts/preflight_create3.sh'
+> ```
+>
+> This was the single largest time sink in both independent reviews of this repo.
+
 ### Web GUI
 
-`docker compose up -d` also starts a browser GUI at **`http://<this host>:8080/`**:
-battery, dock state, odometry with a position trail, hazards, dock/undock buttons,
-keyboard teleop, and a diagnostics panel that runs the setup scripts from the page.
+`docker compose up -d` also starts a browser GUI at
+**`http://<this host>:8080/?token=<token>`**: battery, dock state, odometry with a
+position trail, hazards, dock/undock buttons, keyboard teleop, and a diagnostics
+panel that runs the setup scripts from the page.
 
 It is meant to replace reaching for a remote desktop. A NoMachine or VNC session
 costs roughly 1-10 Mbit/s and needs a desktop on the host; this pushes a JSON
 snapshot at 10 Hz, on the order of 5 KB/s, and works on a phone.
 
-> **Set a token before using this on any shared network.** The GUI binds every
-> interface, so without one, anyone who can reach port 8080 can drive the robot
-> and reboot it:
->
-> ```bash
-> cp .env.example .env
-> python3 -c "import secrets; print(secrets.token_urlsafe(24))"   # into CREATE3_WEB_TOKEN
-> chmod 600 .env
-> ```
->
-> Then browse to `http://<host>:8080/?token=<token>`. See
+> **The token is required.** The page, `/api/*`, `/api/robot/*` and the websocket
+> all return **401** without it, so the GUI does not work at all until
+> `CREATE3_WEB_TOKEN` is set in `.env`. (Leaving it empty is a supported but
+> deliberate choice: it disables authentication entirely, which means anyone who
+> can reach port 8080 can drive the robot and reboot it. The node logs a warning
+> at startup so it is never silent.) See
 > [`src/create3_web/README.md`](src/create3_web/README.md#access-control) for
 > rotation and the limits of this scheme.
 
@@ -137,57 +172,181 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm colcon   # rebuild
 ```
 
+The override mounts the host's `src/` into every service, including `web`, which is
+the package most likely to be edited.
+
 `build/` and `install/` are named volumes rather than bind mounts, deliberately: the
 host's own colcon tree was built against the host's ROS installation, and letting the
 container write over it produces artifacts that work in neither place.
+
+> **A named volume is seeded from the image once, when the volume is first
+> created, and is never refreshed after that.** So `docker compose build` alone
+> does not change what the dev stack runs: `build/` and `install/` still hold
+> whatever was captured the first time, and the containers keep executing the old
+> install tree while you wonder why your edit did nothing. Either re-run the
+> `colcon` service above, or throw the volumes away and let them be re-seeded:
+>
+> ```bash
+> docker compose -f docker-compose.yml -f docker-compose.dev.yml down -v
+> ```
+>
+> This does not apply to the plain (non-dev) stack, which has no such volumes and
+> runs the image's own install tree directly.
 
 ---
 
 ## Native installation (without Docker)
 
-Use this if you would rather run the stack directly on the host. Steps 4 and 5 apply
-either way -- the robot's own configuration and the verification ladder are the same
+This is the backup path: the Docker stack above is the supported default. Use this
+if you would rather run the nodes directly on the host. Steps 5 and 6 apply either
+way -- the robot's own configuration and the verification ladder are the same
 whether the ROS nodes run in a container or not.
 
-### 1. Install ROS 2 Jazzy and dependencies
+This recipe was tested end to end on Ubuntu 24.04 / ROS 2 Jazzy. Two details in
+step 3 look like they should not matter and do -- which interpreter the
+virtualenv is built on, and the fact that *activating* it achieves nothing. Both
+are explained where they appear, because discovering either the hard way costs
+hours.
+
+### 0. Prepare the host
+
+**Do not skip this.** The native path needs exactly the same host preparation as
+the Docker path: a static address on the robot's wired subnet, and chrony serving
+time to it. Without the address, `configure_create3.py` cannot reach the robot at
+all and nothing later in this section can work.
+
+```bash
+sudo scripts/bootstrap_host.sh --skip-docker
+```
+
+`--skip-docker` because a native install has no use for it. Run with `--dry-run`
+first to see what it would change; it is idempotent. See
+[`scripts/README.md`](scripts/README.md) for the options.
+
+### 1. Install ROS 2 Jazzy and system dependencies
 
 1. Install ROS 2 Jazzy using the
    [ROS 2 Jazzy Installation Guide](https://docs.ros.org/en/jazzy/Installation/Ubuntu-Install-Debs.html).
 
-2. Install the Create 3 messages and the packages this repo's bringup needs:
+2. Install the ROS packages this workspace needs and that a Python virtualenv
+   cannot provide:
 
     ```bash
-    sudo apt install -y \
-      ros-jazzy-irobot-create-msgs \
-      ros-jazzy-teleop-twist-keyboard \
-      ros-jazzy-nav2-common
+    sudo apt install -y ros-jazzy-teleop-twist-keyboard ros-jazzy-nav2-common \
+                        ros-jazzy-slam-toolbox ros-jazzy-rplidar-ros \
+                        ros-jazzy-joy ros-jazzy-teleop-twist-joy
     ```
 
-### 2. Clone and build this repository
+   The last four are not needed by anything in this repository proper; they are
+   dependencies of the `create3_examples` submodule, which `colcon build` builds
+   unconditionally. `slam_toolbox` in particular is large.
+
+> **Do not `apt install ros-jazzy-irobot-create-msgs`.** `src/irobot_create_msgs`
+> is a submodule built from source. Installing the apt package as well leaves two
+> copies of the same interfaces on the machine, with the workspace overlay
+> shadowing the apt one -- a version-skew trap that bites the moment the two
+> diverge.
+
+### 2. Clone this repository
 
 ```bash
 git clone --recurse-submodules https://github.com/cpsl-research/CPSL_ROS2_Create3
+cd CPSL_ROS2_Create3
 ```
 
 If you forgot `--recurse-submodules`:
 
 ```bash
-cd CPSL_ROS2_Create3
 git submodule update --init --recursive
 ```
 
-Then install dependencies and build:
+Then create `.env`, exactly as in the Docker path -- `create3_web` reads its
+configuration, including the required access token, from the environment:
 
 ```bash
-cd CPSL_ROS2_Create3
-rosdep install -i --from-path src --rosdistro jazzy -y
+cp .env.example .env
+python3 -c "import secrets; print(secrets.token_urlsafe(24))"   # into CREATE3_WEB_TOKEN
+chmod 600 .env
+set -a; source .env; set +a      # compose reads .env by itself; a native shell does not
+```
+
+### 3. Build, with a uv-managed virtualenv
+
+`create3_web` needs `fastapi`, `uvicorn` and `websockets`. Ubuntu 24.04 refuses
+`pip install` into the system interpreter (PEP 668), so those come from a
+virtualenv that `uv` manages. Install `uv` -- no root needed, it lands in
+`~/.local/bin`:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Create the virtualenv **on the system interpreter**, and with system site
+packages visible:
+
+```bash
+export UV_PYTHON_DOWNLOADS=never
+uv venv --python /usr/bin/python3.12 --python-preference only-system \
+        --system-site-packages .venv
+uv pip install --python .venv/bin/python fastapi uvicorn websockets
+```
+
+Both of those flags are load-bearing:
+
+- **`--python-preference only-system` / `UV_PYTHON_DOWNLOADS=never`.** By default
+  `uv` will happily download its own CPython build. ROS 2's compiled extensions
+  are built against Ubuntu's `/usr/bin/python3.12` and will not load under a
+  different interpreter, so the virtualenv has to be built on the system one.
+- **`--system-site-packages`.** Without it, `import rclpy` fails immediately:
+
+  ```
+  File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/parameter.py", line 27
+    import yaml
+  ModuleNotFoundError: No module named 'yaml'
+  ```
+
+  `rclpy` imports apt-provided modules that live in `/usr/lib/python3/dist-packages`,
+  which an isolated virtualenv cannot see.
+
+Now build:
+
+```bash
+source /opt/ros/jazzy/setup.bash
 colcon build --symlink-install
 source install/setup.bash
 ```
 
-> Run `rosdep install` **before** `colcon build`.
+Finally, bridge the virtualenv into the interpreter the nodes actually run under:
 
-### 3. Configure the ROS 2 middleware on the host
+```bash
+export PYTHONPATH="$PWD/.venv/lib/python3.12/site-packages:$PYTHONPATH"
+```
+
+> **Activating the virtualenv does nothing, and this is the step people lose an
+> afternoon to.** `colcon` and `ros2` are apt-installed with a literal
+> `#!/usr/bin/python3` shebang, and `colcon` bakes that same shebang into every
+> console script it generates. So `ros2 run` and `ros2 launch` execute under the
+> *system* interpreter no matter which virtualenv is active, and the system
+> interpreter cannot see `.venv`'s packages. Rebuilding with the virtualenv
+> activated does not change it either. `PYTHONPATH` is the bridge.
+>
+> Export it **after** `source install/setup.bash`. That script prepends its own
+> entries to `PYTHONPATH` rather than replacing the variable, so the tested order
+> is: source, then export.
+
+The `PATH` and `PYTHONPATH` exports are per-shell. Put them in `~/.bashrc`
+alongside the ROS settings in the next step, or re-run them in every terminal.
+
+> On `rosdep`: `rosdep install -i --from-path src --rosdistro jazzy -y`, run from
+> the workspace root, resolves this workspace's declared dependencies -- the apt
+> packages from step 1, plus `python3-fastapi`, `python3-uvicorn` and
+> `python3-websockets`. That is what the Docker image does. The virtualenv above
+> is the alternative used here, so those three land somewhere you own rather than
+> in the system interpreter. Note the path is relative to where you run the
+> command; `src` does not resolve from inside `src/create3_web/`.
+
+### 4. Configure the ROS 2 middleware on the host
 
 Add to your `~/.bashrc`:
 
@@ -211,16 +370,45 @@ the host send unicast discovery directly to the robot rather than relying on mul
 ```
 
 `LARGE_DATA` moves DDS user data onto TCP, which the Create 3's Iron-era Fast DDS will not
-negotiate. The result is that **no robot nodes or topics appear at all**, while ping, the robot
-web UI and the robot's own logs all look completely healthy - a genuinely confusing failure.
-Measured 2026-09-17:
+negotiate. Meanwhile ping, the robot web UI and the robot's own logs all look completely
+healthy.
 
-| Host configuration | Create 3 nodes discovered |
-|---|---|
-| Fast DDS XML profile + `LARGE_DATA` | **0** |
-| Fast DDS XML profile only | **10** |
-| `LARGE_DATA` only | **0** |
-| neither | **10** |
+**The signature is: discovery gives you something, data gives you nothing.** Every
+way of *looking at the graph* still reports a robot, and none of the data ever
+arrives. So the only reliable test is to ask for a message:
+
+```bash
+ros2 topic echo /cpsl_ugv_1/battery_state --once      # hangs forever under LARGE_DATA
+```
+
+On a healthy link that returns a `BatteryState` within a second or two. Under
+`LARGE_DATA` it hangs until you kill it, no matter what `ros2 node list` and
+`ros2 topic list` told you a moment earlier.
+
+Do **not** use an empty `ros2 node list` as the diagnostic, because it usually is
+not empty. What `node list` reports depends on whether the `ros2` daemon answers:
+
+| | with the `ros2` daemon | `--no-daemon` |
+|---|---|---|
+| `ros2 node list` | every node, looks healthy | nothing at all |
+| `ros2 topic list` | every topic | every topic |
+| `ros2 topic echo` | nothing arrives | nothing arrives |
+
+That split is the daemon's doing, and it is worth understanding because it will
+mislead you elsewhere too. The `ros2` daemon is a long-lived background process
+that caches the ROS graph, and it inherited its environment from *whatever shell
+first started it*. A daemon started from a clean shell keeps serving its clean,
+healthy-looking graph to a `ros2` command run from a polluted one. To see what
+your current environment actually discovers, take the daemon out of the picture:
+
+```bash
+ros2 daemon stop                 # the next command starts a fresh one
+ros2 node list --no-daemon       # ask the network directly, using THIS environment
+```
+
+Topic *names* survive either way, which is the part that catches people out:
+discovery metadata still flows over UDP, so the topics are advertised and only the
+user data is stuck.
 
 If another process genuinely needs it (e.g. large point clouds to an edge server), scope it to
 that process only:
@@ -263,7 +451,7 @@ export FASTRTPS_DEFAULT_PROFILES_FILE=/home/$USER/fastdds_create3.xml
 
 See the [Create 3 Fast-DDS instructions](https://iroboteducation.github.io/create3_docs/setup/xml-config/).
 
-### 4. Configure the Create 3 itself
+### 5. Configure the Create 3 itself
 
 Host-side setup alone is **not** sufficient. The robot keeps its own ROS 2 and networking
 configuration in flash, and it has to be set before the robot will ever appear in
@@ -282,7 +470,7 @@ cd scripts
 **By hand:** open the robot's web interface at **`http://192.168.186.2`** and configure the
 following.
 
-#### 4a. Application -> Configuration
+#### 5a. Application -> Configuration
 
 | Field | Value |
 |---|---|
@@ -293,7 +481,7 @@ following.
 
 Leave the discovery server disabled unless you are actually running one on the host.
 
-#### 4b. Beta Features -> Override RMW Profile (required)
+#### 5b. Beta Features -> Override RMW Profile (required)
 
 **With this box empty, the robot binds its DDS ports and answers pings but never announces
 itself on its wired interface**, so `ros2 node list` stays empty even though everything else
@@ -323,7 +511,7 @@ host as a Fast DDS initial peer so the robot actively announces to it. Clear the
 
 Then click **Application -> Restart application**.
 
-#### 4c. Beta Features -> Edit ntp.conf
+#### 5c. Beta Features -> Edit ntp.conf
 
 The Create 3 has no battery-backed clock. Point it at your host and click **Restart ntpd**:
 
@@ -339,13 +527,13 @@ echo "robot: $(curl -s -I http://192.168.186.2/home | grep -i '^date' | cut -d' 
 echo "nuc:   $(date -u '+%a, %d %b %Y %H:%M:%S GMT')"
 ```
 
-#### 4d. Boot order matters
+#### 5d. Boot order matters
 
 The Create 3 sets up its networking and DDS at **boot**, not when the application starts. If
 the robot powered on without its Ethernet cable connected, **Restart application is not
 enough** - use **Reboot robot**.
 
-### 5. Verify the connection
+### 6. Verify the connection
 
 [`scripts/preflight_create3.sh`](scripts/) checks all five layers of the link -- host NIC,
 host ROS 2 environment, IP reachability, robot-side configuration, and actual DDS traffic --
@@ -364,7 +552,7 @@ ping -c 3 192.168.186.2
 ros2 node list
 ```
 
-`ros2 node list` should show all ten robot nodes:
+`ros2 node list` should show these ten nodes, which are the robot's own:
 
 ```
 /cpsl_ugv_1/_internal/composite_hazard
@@ -379,13 +567,24 @@ ros2 node list
 /cpsl_ugv_1/ui_mgr
 ```
 
+Expect **more** than ten once this stack is running: `create3_bringup` adds
+`/cpsl_ugv_1/tf_repub` and `/cpsl_ugv_1/odom_repub`, and the web GUI adds
+`/create3_web`. Anything else on the same domain shows up too. Ten is the floor
+for "the robot is there", not the total.
+
 For topics, use a longer discovery window - the default 5 s is often not enough and returns
 nothing, which looks like a failure but is not:
 
 ```bash
-ros2 topic list --spin-time 20 | grep cpsl_ugv_1     # expect 25 topics
+ros2 topic list --spin-time 20 | grep cpsl_ugv_1
 ros2 topic echo /cpsl_ugv_1/battery_state --once
 ```
+
+The namespace carries roughly two dozen topics; the exact number moves with
+firmware and with whatever else is attached, so treat a plausible count as a pass
+and do not assert an exact one. `preflight_create3.sh` deliberately asserts a
+lower bound rather than an equality for the same reason. The message that actually
+arrives from `ros2 topic echo` is the meaningful result.
 
 If `ros2 topic echo` says `Could not determine the type for the passed topic`, pass the type
 explicitly:
@@ -394,10 +593,22 @@ explicitly:
 ros2 topic echo /cpsl_ugv_1/battery_state sensor_msgs/msg/BatteryState --once
 ```
 
-If `ros2 node list` is empty, run `scripts/preflight_create3.sh` -- it checks each of the
-usual causes in dependency order: `FASTDDS_BUILTIN_TRANSPORTS` is unset, the robot's RMW
-override is set, the robot booted with the cable connected, and the robot application
-finished starting. The manual's troubleshooting section walks through each case in detail.
+If `ros2 node list` is empty, or lists the robot while `ros2 topic echo` never returns, run
+`scripts/preflight_create3.sh` -- it checks each of the usual causes in dependency order:
+`FASTDDS_BUILTIN_TRANSPORTS` is unset, the robot's RMW override is set, the robot booted
+with the cable connected, and the robot application finished starting. The manual's
+troubleshooting section walks through each case in detail.
+
+Then start the stack:
+
+```bash
+scripts/preflight_create3.sh
+ros2 launch create3_bringup create3_bringup.launch.py namespace:=cpsl_ugv_1
+ros2 launch create3_web create3_web.launch.py namespace:=cpsl_ugv_1     # separate terminal
+```
+
+Each terminal needs `source /opt/ros/jazzy/setup.bash`, `source install/setup.bash`
+and the `PYTHONPATH` export from step 3.
 
 ---
 
@@ -460,10 +671,11 @@ source install/setup.bash
 ros2 run tf_repub tf_repub
 ```
 
-On the receiving machine:
+On the receiving machine, nothing special is needed -- `tf_repub` publishes onto the
+global `/tf`, which is where every tf2 consumer already looks:
 
 ```bash
-rviz2 --ros-args --remap /tf:=/forwarded_tf
+rviz2
 ```
 
 ### 7. Other available actions
