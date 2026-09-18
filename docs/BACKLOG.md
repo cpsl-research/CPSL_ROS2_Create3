@@ -1,28 +1,75 @@
 # Review backlog — outstanding work
 
 > **This is a working document, not user documentation.** It is a punch list of
-> findings from three independent reviews of this repository, kept so they can be
-> worked through deliberately rather than lost. Do not delete it during
-> documentation cleanup, and do not treat it as setup instructions — the setup
-> instructions are `README.md`, `scripts/README.md` and `src/create3_web/README.md`.
+> open findings from three independent reviews of this repository. Do not delete
+> it during documentation cleanup, and do not treat it as setup instructions —
+> those are `README.md`, `scripts/README.md` and `src/create3_web/README.md`.
 
-Findings come from an independent review of the native (from-source) install
-path, an independent review of the Docker path, and items noticed during
-development. Each entry says what is wrong, why it matters, and where to fix it.
+Completed items were removed on 2026-09-18 once verified; the full record,
+including what each fix was and how it was tested, is in the history of this file
+(`git log -p docs/BACKLOG.md`, last full version at commit `0ff80b5`).
 
 **Status legend**
 
 | | |
 |---|---|
 | `TODO` | not started |
-| `DEFERRED` | deliberately postponed, with a reason |
-| `DONE` | fixed; kept here for the record |
+| `ACCEPTED` | known, deliberately living with it, with a reason |
+| `DEFERRED` | postponed at the owner's request |
 
 ---
 
-## 1. Correctness bugs
+## 1. Correctness
 
-### 1.1 `tf_repub` and `odom_repub` emit frame IDs with a leading slash — `DEFERRED`
+### 1.1 Preflight layer 5 trusts the ROS 2 daemon and can report a false PASS — `TODO`
+
+`scripts/preflight_create3.sh:286` uses plain `ros2 node list`, which is answered
+from the long-lived `ros2` daemon. The daemon keeps serving a cached, healthy
+graph regardless of the current shell's DDS environment, so with
+`FASTDDS_BUILTIN_TRANSPORTS=LARGE_DATA` set the script reports:
+
+```
+[PASS] all 10 expected nodes discovered under /cpsl_ugv_1   <- false
+[PASS] 25 topics advertised under /cpsl_ugv_1               <- false
+[FAIL] no message received on /cpsl_ugv_1/battery_state within 12s
+```
+
+The overall verdict was still correct because the data checks caught it, which is
+why they exist. Adding `--no-daemon` to the node and topic queries would make the
+layer honest rather than accidentally right. Consider also `ros2 daemon stop`.
+
+Small, self-contained: two query sites, plus a re-run of the four preflight modes.
+
+### 1.2 Preflight does not validate `FASTRTPS_DEFAULT_PROFILES_FILE` contents — `TODO`
+
+The script checks only that the file exists. A stale profile silently breaks
+discovery of your **own** nodes while the robot still looks reachable.
+
+Observed on this host, where `~/.bashrc` sets
+`FASTRTPS_DEFAULT_PROFILES_FILE=~/fastdds_nuc.xml` and that file names an
+unrelated `192.168.0.30` in `initialPeersList` with an emptied metatraffic
+multicast locator list:
+
+```
+$ ros2 launch create3_bringup create3_bringup.launch.py namespace:=cpsl_ugv_1
+[INFO] [tf_repub-1]: process started
+$ ros2 node list --no-daemon --spin-time 10 | grep -c repub
+0                                    # processes alive, invisible
+
+$ unset FASTRTPS_DEFAULT_PROFILES_FILE
+$ ros2 node list --no-daemon --spin-time 10 | grep repub
+/cpsl_ugv_1/odom_repub
+/cpsl_ugv_1/tf_repub
+```
+
+Preflight reports `[PASS] FASTRTPS_DEFAULT_PROFILES_FILE=... (exists)` throughout.
+It should parse the profile and warn when `initialPeersList` does not name the
+robot, or when the metatraffic locator list is emptied. Rated the single most
+likely thing to burn a new user after `LARGE_DATA`.
+
+Depends on **5.2** — decide whether the native path needs a profile at all first.
+
+### 1.3 `tf_repub` and `odom_repub` emit frame IDs with a leading slash — `DEFERRED`
 
 `src/tf_repub/tf_repub/tf_repub.py:12-17` (and `src/odom_repub/odom_repub/odom_repub.py:40-41`)
 
@@ -31,9 +78,8 @@ self.namespace = self.get_namespace()        # already returns "/cpsl_ugv_1"
 self.tf_prefix = "{}/".format(self.namespace)  # -> "/cpsl_ugv_1/"
 ```
 
-`get_namespace()` already includes the leading slash, so the prefix ends up with
-two levels of slash and the published frames are `/cpsl_ugv_1/odom` and
-`/cpsl_ugv_1/base_link`. tf2 rejects these outright:
+`get_namespace()` already includes the leading slash, so the published frames are
+`/cpsl_ugv_1/odom` and `/cpsl_ugv_1/base_link`. tf2 rejects these outright:
 
 ```
 $ ros2 run tf2_ros tf2_echo /cpsl_ugv_1/odom /cpsl_ugv_1/base_link
@@ -63,127 +109,23 @@ later. Two things to settle when they are:
 
 Pre-existing; affects the Docker and native paths identically.
 
-### 1.2 `preflight_create3.sh` aborts when run from a shell without ROS — `DONE`
-
-`scripts/preflight_create3.sh` — `set -uo pipefail` (line 21) versus
-`source /opt/ros/jazzy/setup.bash` (line 111).
-
-```
-[WARN] no ROS 2 environment in the calling shell (ROS_DISTRO unset)
-/opt/ros/jazzy/setup.bash: line 8: AMENT_TRACE_SETUP_FILES: unbound variable
-EXIT=1
-```
-
-Layers 3, 4 and 5 never run, and the user gets a bash error instead of a
-diagnosis — in exactly the situation the script advertises that it handles.
-
-Fixed by wrapping the source in `set +u` / `set -u`. Verified: the same command
-now runs all five layers instead of aborting.
-
-Worth recording that the documentation pass reported this as "already fixed in
-code". It was not — the crash reproduced exactly as first described. The claim
-was checked before being believed.
-
-### 1.2b Preflight reported a healthy link without ever seeing a message — `DONE`
-
-The summary printed `The Create 3 link is healthy` and exited 0 whenever
-`FAILED -eq 0`. On a host with Docker but no ROS 2 — the stated point of
-containerising — layer 5 is skipped with a *warning*, and warnings do not affect
-the exit status. So the one layer that proves data actually flows was silently
-skipped and the script still reported success.
-
-That is the worst thing a diagnostic tool can do. It now tracks whether a message
-was genuinely received and refuses to claim health otherwise:
-
-```
-[WARN] the ros2 CLI is not on PATH; skipping discovery checks
-16 passed, 2 warning(s)
-Inconclusive: 16 checks passed, but no message was ever received
-from the robot, so the link is NOT confirmed working.
-If the ros2 CLI is unavailable here, run the checks in the container:
-  docker compose run --rm preflight
-exit=2
-```
-
-Exit 2 distinguishes "inconclusive" from pass (0) and fail (1). `--quick` still
-exits 0, since skipping layer 5 there is the operator's own choice.
-
-Verified against a simulated Docker-only host (`ubuntu:24.04`, host networking,
-no `/opt/ros`, `ros2` not on PATH).
-
-### 1.3 Preflight layer 5 trusts the ROS 2 daemon and can report a false PASS — `TODO`
-
-`scripts/preflight_create3.sh:286` uses plain `ros2 node list`, which is answered
-from the long-lived `ros2` daemon. The daemon keeps serving a cached, healthy
-graph regardless of the current shell's DDS environment, so with
-`FASTDDS_BUILTIN_TRANSPORTS=LARGE_DATA` set the script reports:
-
-```
-[PASS] all 10 expected nodes discovered under /cpsl_ugv_1   <- false
-[PASS] 25 topics advertised under /cpsl_ugv_1               <- false
-[FAIL] no message received on /cpsl_ugv_1/battery_state within 12s
-```
-
-The overall verdict was still correct because the data checks caught it, which is
-why they exist. Adding `--no-daemon` to the node and topic queries would make the
-layer honest rather than accidentally right. Consider also `ros2 daemon stop`.
-
-### 1.4 Preflight does not validate `FASTRTPS_DEFAULT_PROFILES_FILE` contents — `TODO`
-
-The script checks only that the file exists. A stale profile silently breaks
-discovery of your **own** nodes while the robot still looks reachable.
-
-Observed on this host, where `~/.bashrc` sets
-`FASTRTPS_DEFAULT_PROFILES_FILE=~/fastdds_nuc.xml` and that file names an
-unrelated `192.168.0.30` in `initialPeersList` with an emptied metatraffic
-multicast locator list:
-
-```
-$ ros2 launch create3_bringup create3_bringup.launch.py namespace:=cpsl_ugv_1
-[INFO] [tf_repub-1]: process started
-$ ros2 node list --no-daemon --spin-time 10 | grep -c repub
-0                                    # processes alive, invisible
-
-$ unset FASTRTPS_DEFAULT_PROFILES_FILE
-$ ros2 node list --no-daemon --spin-time 10 | grep repub
-/cpsl_ugv_1/odom_repub
-/cpsl_ugv_1/tf_repub
-```
-
-Preflight reports `[PASS] FASTRTPS_DEFAULT_PROFILES_FILE=... (exists)` throughout.
-It should parse the profile and warn when `initialPeersList` does not name the
-robot, or when the metatraffic locator list is emptied. Rated the single most
-likely thing to burn a new user after `LARGE_DATA`.
-
 ---
 
 ## 2. Security and exposure
 
-### 2.1 Web GUI reachable from the university network without authentication — `DONE`
+The web GUI is now token-gated on every surface — the page, the telemetry API,
+the websocket, the control endpoints and the diagnostics endpoints. What follows
+is what that did *not* close.
 
-The GUI binds `0.0.0.0:8080` and this host is on Duke's `10.197.36.73/16` as well
-as the robot link. Verified reachable and serving live telemetry plus teleop and
-dock/undock controls from the campus address, with `CREATE3_WEB_TOKEN` empty.
+### 2.1 Residual web GUI exposure decisions — `TODO`
 
-Fixed. A token is generated into `.env` (mode 600, gitignored), `CREATE3_WEB_HOST`
-and `CREATE3_WEB_TELEMETRY_HZ` are now forwarded through compose, and **every**
-surface is gated — the page itself, the telemetry API, the websocket, the control
-endpoints and the diagnostics endpoints.
-
-A hole was found while verifying this: the `/api/robot/*` diagnostics routes had
-no authentication at all, because `admin.py` never received the token callback.
-`POST /api/robot/reboot` was therefore open to anyone who could reach the port.
-Now gated. Verified: all nine endpoints return 401 unauthenticated, including
-from the campus address, and the websocket rejects a missing or wrong token.
-
-Remaining:
-
-- Decide whether the GUI should bind the robot subnet only, and accept that this
-  makes it unreachable from a laptop on wifi. A token plus `0.0.0.0` is the
-  usable compromise; binding to `192.168.186.3` is the strict one.
-- A token in a query string appears in browser history and any proxy logs.
+- **Bind address.** The GUI binds `0.0.0.0:8080` and this host is also on Duke's
+  `10.197.36.73/16`. A token plus `0.0.0.0` is the usable compromise; binding
+  `CREATE3_WEB_HOST=192.168.186.3` is the strict one, and makes the GUI
+  unreachable from a laptop on wifi. Not yet decided.
+- **Token in the query string** appears in browser history and any proxy logs.
   Acceptable on a lab network; revisit if this is ever exposed more widely.
-- There is no TLS, so the token crosses the network in clear text.
+- **No TLS**, so the token crosses the network in clear text.
 
 ### 2.2 DDS discovery is advertised on the university subnet — `TODO`
 
@@ -201,40 +143,22 @@ ROS_STATIC_PEERS: "192.168.186.2"
 ```
 
 All containers share the host network namespace, so they are already localhost to
-one another; the static peer covers the robot. Needs testing before adoption.
+one another; the static peer covers the robot. Needs testing before adoption —
+the failure mode if it is wrong is that the robot disappears entirely.
+
+### 2.3 `GET /static/*` remains unauthenticated — `ACCEPTED`
+
+The page, APIs and websocket are all gated, but static assets are not, because
+the browser fetches them from a `<script src>` that carries no token. They are
+inert JavaScript and CSS with no robot data, so this is accepted. Revisit if the
+GUI is ever exposed beyond a lab network — a cookie set on the authenticated `/`
+response would close it.
 
 ---
 
-## 2b. Docker path and dev workflow
+## 3. Docker image
 
-### 2b.1 Documented dev rebuild command was unresolvable — `DONE`
-
-`docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm colcon`
-failed with `invalid service "colcon". Must specify either image or build`, and
-poisoned the whole project so that even `config` errored. Cause: `extends:` with
-no `file:` resolves within the same file, where `shell` was only a volumes
-fragment with no image.
-
-Fixed: `extends` now names `docker-compose.yml` explicitly, and the volume list
-is a top-level anchor so `colcon` actually receives the source mount and the
-build/install volumes — without them it would have "rebuilt" the image's baked-in
-copy into a throwaway layer. Verified: `11 packages finished [4.89s]`, exit 0.
-
-### 2b.2 Dev override skipped the `web` service — `DONE`
-
-`docker-compose.dev.yml` mounted the host source into `bringup`, `teleop`,
-`shell` and `preflight` but not `web` — the package most likely to be edited,
-being the GUI. Dev mode silently kept serving the copy baked into the image.
-Fixed.
-
-### 2b.3 Two documented web settings were dropped by compose — `DONE`
-
-`src/create3_web/README.md` documents `CREATE3_WEB_HOST` and
-`CREATE3_WEB_TELEMETRY_HZ`, and the code reads both, but `docker-compose.yml`
-never forwarded them, so they worked natively and were dead under Docker. Both
-now forwarded.
-
-### 2b.4 The image is far larger than it needs to be — `TODO`
+### 3.1 The image is far larger than it needs to be — `TODO`
 
 `docker/Dockerfile` comments call the `rosdep install` step "a safety net … if it
 starts installing things, add them here". It installs on **every** build:
@@ -254,153 +178,16 @@ Options: add a `COLCON_IGNORE` to `src/create3_examples`, build with
 build argument. Then correct the Dockerfile comment, whose stated invariant has
 already been violated without anyone noticing.
 
-### 2b.5 Named volumes in dev mode are seeded once and never refreshed — `DONE`
-
-`/ws/install` is populated from the image when the volume is first created, then
-never again. After a `docker compose build`, the dev stack keeps running the old
-install tree until the colcon service is re-run or the volumes are deleted. Now
-noted in `docker-compose.dev.yml`; it should also be in the README's development
-section.
-
-### 2b.6 `GET /static/*` remains unauthenticated — `TODO` (accepted for now)
-
-The page, APIs and websocket are all gated, but static assets are not, because
-the browser fetches them from a `<script src>` that carries no token. They are
-inert JavaScript and CSS with no robot data, so this is accepted. Revisit if the
-GUI is ever exposed beyond a lab network — a cookie set on the authenticated `/`
-response would close it.
-
-### 2b.7 `CREATE3_SCRIPTS_DIR` is undocumented — `DONE`
-
-`admin.py` reads it; the `src/create3_web/README.md` configuration table omits it.
-
 ---
 
-## 3. Documentation defects
+## 4. Native (from-source) path
 
-### 3.1 The `LARGE_DATA` symptom table is wrong, and two documents contradict — `DONE`
+The uv recipe is verified end to end and is documented in `README.md`, including
+the two non-obvious traps (`--system-site-packages` is mandatory; activating the
+venv does nothing, so the venv must be bridged onto `PYTHONPATH` *after*
+`source install/setup.bash`). What remains is making it reproducible.
 
-`README.md` claims `LARGE_DATA` yields **0** discovered nodes, and directs the
-user to check for an empty `ros2 node list`. What actually happens:
-
-```
-$ ros2 node list            # all TEN nodes, looks perfectly healthy
-$ ros2 topic echo /cpsl_ugv_1/battery_state --once
-ECHO_EXIT=124               # nothing ever arrives
-```
-
-The "0 nodes" figure only reproduces with `--no-daemon`. **The documented
-diagnostic is precisely the one that does not fire.**
-
-The two reviews measured it independently and neither document is right. With
-`--no-daemon`, nodes are **0** but **all 26 topics are present** (including
-robot-only ones like `ir_intensity`, `cliff_intensity`, `slip_status`), and no
-user data flows. With the daemon, the graph looks entirely healthy. So:
-
-| | with `ros2` daemon | `--no-daemon` |
-|---|---|---|
-| nodes | all 10, looks healthy | 0 |
-| topics | all present | all present |
-| `topic echo` | nothing arrives | nothing arrives |
-
-`README.md` says no topics appear; `scripts/README.md` says nodes and topics list
-normally. The reliable signature is the one thing both agree on: **discovery
-gives you something, data gives you nothing.**
-
-Fix: drop the node-count table, describe the real signature, make
-`ros2 topic echo` the diagnostic, and explain the daemon.
-
-### 3.2 The native path omits host preparation entirely — `DONE`
-
-`README.md` says "Steps 4 and 5 apply either way", implying steps 1–3 are the
-complete native substitute for the Docker quick start. They are not: the Docker
-quick start's step 0 is `sudo scripts/bootstrap_host.sh`, and the native section
-never mentions it, the static IP, or how to set up chrony. A user following it
-literally has no address on `192.168.186.0/24`, so `configure_create3.py` cannot
-reach the robot at all.
-
-Fix: the native section must start with `sudo scripts/bootstrap_host.sh --skip-docker`.
-Also, that script's closing "Next:" text recommends `docker compose up -d`, which
-is wrong guidance for a native user — make it aware of which path is being set up.
-
-### 3.3 Stale RViz remap in Tutorial 6 — `DONE`
-
-`README.md` shows `rviz2 --ros-args --remap /tf:=/forwarded_tf`. Nothing
-publishes `/forwarded_tf`; `tf_repub` publishes on `/tf`, as the same document
-says two sections earlier. Leftover from an older design.
-
-### 3.4 The native apt list is both redundant and incomplete — `DONE`
-
-- Redundant: it installs `ros-jazzy-irobot-create-msgs` while
-  `src/irobot_create_msgs` is a submodule built from source. Both end up
-  installed and the overlay wins — a version-skew trap (both happen to be 3.0.0
-  today).
-- Incomplete: a clean machine also needs `joy`, `teleop_twist_joy`,
-  `slam_toolbox` and `rplidar_ros`, pulled in by the `create3_examples`
-  submodule.
-
-### 3.5 Brittle hard-coded topic count — `DONE`
-
-`README.md` says "expect 25 topics"; measured 25 and 26 depending on what else is
-attached. `preflight_create3.sh` sensibly asserts `>= 20`. Soften the prose.
-
----
-
-## 4. Gaps a new user falls into
-
-| | Gap | Where |
-|---|---|---|
-| 4.1 | The **ROS 2 daemon** is never mentioned, yet it is the mechanism by which the documented `LARGE_DATA` diagnostic fails. Document `--no-daemon` and `ros2 daemon stop`. | `README.md` |
-| 4.2 | **Stale terminals** keep old exports after `~/.bashrc` is fixed. `scripts/README.md` covers this well; `README.md`, which a new user reads first, does not. | `README.md` |
-| 4.3 | **`create3_examples` is never mentioned.** A `--recurse-submodules` clone drags in six extra packages that `colcon build` builds unconditionally (11 total), and it is the only source of the `rplidar_ros` / `slam_toolbox` / `joy` dependencies. | `README.md` |
-| 4.4 | `src/create3_web/README.md` shows `rosdep install --from-paths src ...` but never says to run it **from the workspace root**; `src` does not resolve from where that README lives. It also uses `--from-paths/--ignore-src` where `README.md` uses `-i/--from-path`. | `src/create3_web/README.md` |
-| 4.5 | `.gitignore` has no `.venv/`. Harmless today only because uv writes a self-ignoring `.venv/.gitignore`; do not rely on that. | `.gitignore` |
-
----
-
-## 5. Native path with uv
-
-The uv recipe is verified end to end and belongs in the documentation. Two
-findings were not obvious and must survive into whatever is written:
-
-### 5.1 `--system-site-packages` is mandatory
-
-ROS's `setup.bash` only adds `/opt/ros/jazzy/lib/python3.12/site-packages` to
-`PYTHONPATH`. `rclpy` additionally imports apt-provided modules (`yaml`, and
-downstream `numpy`, `lark`, `catkin_pkg`, `packaging`) from
-`/usr/lib/python3/dist-packages`, which a plain venv excludes:
-
-```
-$ python -c "import rclpy"
-  File ".../rclpy/parameter.py", line 27, in <module>
-    import yaml
-ModuleNotFoundError: No module named 'yaml'
-```
-
-### 5.2 Activating the venv does nothing — bridge it with `PYTHONPATH`
-
-`colcon` is apt-installed with a `#!/usr/bin/python3` shebang and bakes that
-shebang into every console script it generates, so `ros2 run` executes under the
-system interpreter no matter which venv is active:
-
-```
-$ source .venv/bin/activate && ros2 run create3_web create3_web
-ModuleNotFoundError: No module named 'fastapi'
-$ head -1 install/create3_web/lib/create3_web/create3_web
-#!/usr/bin/python3
-```
-
-Rebuilding with the venv active does not change this. The venv must instead be
-put on `PYTHONPATH`, **after** `source install/setup.bash` (which prepends to it):
-
-```bash
-export PYTHONPATH="$PWD/.venv/lib/python3.12/site-packages:$PYTHONPATH"
-```
-
-This is safe only because the venv is built on the system interpreter, so the
-installed wheels are ABI-compatible with `/usr/bin/python3.12`.
-
-### 5.3 Add `pyproject.toml` + `uv.lock` — `TODO`
+### 4.1 Add `pyproject.toml` + `uv.lock` — `TODO`
 
 Loose `uv pip install fastapi uvicorn websockets` resolved to fastapi 0.141.1 /
 starlette 1.6.0 / pydantic 2.13.5 today; someone setting up next month gets
@@ -417,7 +204,7 @@ Unverified caveat: `uv sync` manages `.venv` itself and does not accept
 `--system-site-packages` as a project setting, so `uv venv` may still have to
 create the venv first. Test before committing.
 
-### 5.4 Provide a `setup_native.sh` — `TODO`
+### 4.2 Provide a `setup_native.sh` — `TODO`
 
 The source-and-export steps (ROS, workspace, `PYTHONPATH` bridge) are fiddly and
 order-dependent. Ship them as a `source`-able script so nobody has to get the
@@ -425,13 +212,14 @@ ordering right by hand.
 
 ---
 
-## 6. Multi-repo and infrastructure
+## 5. Multi-repo and host infrastructure
 
-### 6.1 Share one `ROS_DOMAIN_ID` across repos — `TODO`
+### 5.1 Share one `ROS_DOMAIN_ID` across repos — `TODO`
 
-There is no `.env` on disk, so every repo falls back to its own `${ROS_DOMAIN_ID:-0}`
-default. It works today but fails silently the moment one repo disagrees: the
-containers simply stop seeing each other, with no error anywhere.
+This repo now has an `.env` with `ROS_DOMAIN_ID=0`, but each other repo will fall
+back to its own `${ROS_DOMAIN_ID:-0}` default. It works today and fails silently
+the moment one repo disagrees: the containers simply stop seeing each other, with
+no error anywhere.
 
 Note that `env_file:` does **not** solve this — `${VAR}` substitution in a compose
 file reads the shell environment or `./.env`, not `env_file`. Use one shared file
@@ -442,16 +230,31 @@ echo 'ROS_DOMAIN_ID=0' > /home/cpsl/cpsl-ros.env
 ln -s /home/cpsl/cpsl-ros.env /home/cpsl/CPSL_ROS2_Create3/.env
 ```
 
+Careful: this repo's `.env` also holds `CREATE3_WEB_TOKEN` and the rest of the
+local configuration, so it cannot simply be replaced by the symlink above — the
+shared file needs to be a second `--env-file`, or the token moved.
+
 Keep any custom domain ID in **0–101** on Linux, or DDS port math collides with
 the ephemeral port range.
 
-### 6.2 Stale netplan file causes a boot-time parse error — `TODO`
+### 5.2 Legacy `~/fastdds_nuc.xml` and `ROS_STATIC_PEERS` entries — `TODO`
+
+`~/.bashrc` still sets `FASTRTPS_DEFAULT_PROFILES_FILE=~/fastdds_nuc.xml`, whose
+`initialPeersList` names an unreachable `192.168.0.30` — see 1.2 for what this
+breaks. `ROS_STATIC_PEERS` also lists `192.168.0.30`, `david_laptop` and `ugv_1`,
+which resolve to nothing on this machine. The containers deliberately do not set
+either variable, so only the native path is affected.
+
+Decide whether the native path needs a profile at all. If not, unset it; the
+environment variables alone are sufficient.
+
+### 5.3 Stale netplan file causes a boot-time parse error — `TODO`
 
 `/etc/netplan/90-NM-7e326732-021e-346b-95c6-db9fe06a6090.yaml` contains an invalid
 `192.168.186.2/0`. Needs a root shell to inspect and remove. Harmless today
 because the NetworkManager profile itself is correct.
 
-### 6.3 `ipv4.never-default` is `no` on the robot link profile — `TODO`
+### 5.4 `ipv4.never-default` is `no` on the robot link profile — `TODO`
 
 `bootstrap_host.sh` flags this. The profile has no gateway so no default route is
 installed today, but a default route over the robot link would send this machine's
@@ -462,26 +265,15 @@ sudo nmcli connection modify netplan-NM-7e326732-021e-346b-95c6-db9fe06a6090 \
   ipv4.never-default yes
 ```
 
-### 6.4 Legacy `~/fastdds_nuc.xml` and `ROS_STATIC_PEERS` entries — `TODO`
+### 5.5 Untracked backup file in `CPSL_Manuals` — `TODO`
 
-`~/.bashrc` still sets `FASTRTPS_DEFAULT_PROFILES_FILE=~/fastdds_nuc.xml`, whose
-`initialPeersList` names an unreachable `192.168.0.30` — see 1.4 for what this
-breaks. `ROS_STATIC_PEERS` also lists `192.168.0.30`, `david_laptop` and `ugv_1`,
-which resolve to nothing on this machine. The containers deliberately do not set
-either variable, so only the native path is affected.
-
-Decide whether the native path needs a profile at all. If not, unset it; the
-environment variables alone are sufficient.
-
-### 6.5 Untracked backup files — `TODO`
-
-`README.md.bak-20260917` and `UGVs/iRobotCreate3_Hardware.md.bak-20260917` (in
-`CPSL_Manuals`) are untracked leftovers. The originals are in git history, so
-these are redundant.
+`UGVs/iRobotCreate3_Hardware.md.bak-20260917` is an untracked leftover. The
+original is in git history, so it is redundant. (`README.md.bak-20260917` in this
+repo has already been removed.)
 
 ---
 
-## 7. Future direction
+## 6. Future direction
 
 - **Containerise the remaining repos.** `CPSL_ROS2_PCProcessing` is the one that
   pays off — 2.3 GB, 8 submodules, torch and torch-geometric under poetry. The
