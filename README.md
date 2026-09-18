@@ -90,8 +90,19 @@ It is meant to replace reaching for a remote desktop. A NoMachine or VNC session
 costs roughly 1-10 Mbit/s and needs a desktop on the host; this pushes a JSON
 snapshot at 10 Hz, on the order of 5 KB/s, and works on a phone.
 
-> There is **no authentication** unless you set `CREATE3_WEB_TOKEN` in `.env`.
-> Anyone who can reach port 8080 can drive the robot.
+> **Set a token before using this on any shared network.** The GUI binds every
+> interface, so without one, anyone who can reach port 8080 can drive the robot
+> and reboot it:
+>
+> ```bash
+> cp .env.example .env
+> python3 -c "import secrets; print(secrets.token_urlsafe(24))"   # into CREATE3_WEB_TOKEN
+> chmod 600 .env
+> ```
+>
+> Then browse to `http://<host>:8080/?token=<token>`. See
+> [`src/create3_web/README.md`](src/create3_web/README.md#access-control) for
+> rotation and the limits of this scheme.
 
 See [`src/create3_web/README.md`](src/create3_web/README.md) for the safety model
 (velocity deadman, single-driver lock, speed caps, e-stop) and the HTTP interface.

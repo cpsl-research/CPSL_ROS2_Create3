@@ -96,10 +96,55 @@ All settings come from the environment, so compose supplies them from `.env`:
 | `CREATE3_WEB_TELEMETRY_HZ` | `10` | telemetry push rate |
 | `CREATE3_ROBOT_IP` / `CREATE3_HOST_IP` | `192.168.186.2` / `.3` | used by the diagnostics panel |
 
-> **There is no authentication unless you set `CREATE3_WEB_TOKEN`.** Anyone who
-> can reach the port can drive the robot. Set it in `.env` on any shared network;
-> the page then needs `?token=…` in its URL. The node logs a warning at startup
-> when no token is configured.
+### Access control
+
+The GUI binds every interface by default, so on a lab or campus network the robot
+is reachable by any host on that network. `CREATE3_WEB_TOKEN` is what stands
+between them and the drive controls.
+
+**Generate a token — do not invent one by hand, and do not reuse it between
+machines:**
+
+```bash
+python3 -c "import secrets; print(secrets.token_urlsafe(24))"
+```
+
+Put it in `.env`, which is gitignored so the token is never committed, and keep
+the file readable only by you:
+
+```bash
+cp .env.example .env          # if you have not already
+$EDITOR .env                  # set CREATE3_WEB_TOKEN=<the generated value>
+chmod 600 .env
+docker compose up -d web      # pick up the change
+```
+
+Then open `http://<host>:8080/?token=<token>`.
+
+Everything is gated: the page, `/api/*`, `/api/robot/*` and the websocket all
+return **401** without a valid token, and the token is compared in constant time.
+Static assets (`/static/*`) are deliberately not gated — the browser requests
+them from a `<script src>` that cannot carry the token, and they are inert
+JavaScript and CSS containing no robot data.
+
+**Leaving `CREATE3_WEB_TOKEN` empty disables authentication entirely.** That is
+supported for an isolated bench setup, and the node logs a warning at startup so
+it is never silent, but it means anyone who can reach the port can drive the
+robot and reboot it.
+
+To rotate: generate a new value, edit `.env`, `docker compose up -d web`. Any
+open browser tab stops working and needs the new URL.
+
+Two limits worth knowing. The token travels in a query string, so it appears in
+browser history and in any proxy logs — acceptable on a lab network, not for
+wider exposure. And there is no TLS, so it crosses the network in clear text.
+If this ever needs to leave a trusted network, put it behind a reverse proxy
+with HTTPS rather than hardening this server.
+
+To restrict by network instead of by token, set `CREATE3_WEB_HOST` to the
+robot-subnet address (e.g. `192.168.186.3`). That is stricter, but the GUI is
+then unreachable from a laptop or phone on wifi, which is usually the point of
+having it.
 
 ## HTTP interface
 

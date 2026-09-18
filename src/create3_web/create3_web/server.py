@@ -110,13 +110,17 @@ def create_app(
     # are not mounted, which must not stop the rest of the GUI from loading.
     try:
         from .admin import register as register_admin
-        register_admin(app, node, robot_ip, host_ip)
+        register_admin(app, node, robot_ip, host_ip, check_token=check_token)
     except Exception:  # noqa: BLE001
         pass
 
     # --- static frontend -------------------------------------------------
     @app.get('/')
-    async def index() -> FileResponse:
+    async def index(request: Request) -> FileResponse:
+        # Gated as well as the APIs. The page is inert without a token, but
+        # serving it anyway invites someone to conclude the robot is theirs to
+        # drive; a 401 says plainly that it is not.
+        check_token(request)
         return FileResponse(os.path.join(web_dir, 'index.html'))
 
     # colcon --symlink-install populates the package's share directory with

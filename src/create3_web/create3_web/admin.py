@@ -19,7 +19,7 @@ import re
 import sys
 import time
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 
 DEFAULT_SCRIPTS_DIR = '/ws/scripts'
 
@@ -62,8 +62,17 @@ def _load_configure_module():
     return mod
 
 
-def register(app, node, robot_ip: str, host_ip: str) -> None:
-    """Attach the /api/robot/* routes to an existing FastAPI app."""
+def register(app, node, robot_ip: str, host_ip: str, check_token=None) -> None:
+    """Attach the /api/robot/* routes to an existing FastAPI app.
+
+    ``check_token`` is the app's authentication callback. These routes can
+    restart ntpd, restart the robot application and reboot the robot, so they
+    must be gated exactly as tightly as the driving controls -- a diagnostics
+    panel that anyone can reboot the robot from is not a diagnostics panel.
+    """
+    if check_token is None:
+        def check_token(_request):  # pragma: no cover - defensive default
+            return None
 
     def _robot():
         mod = _load_configure_module()
@@ -76,7 +85,8 @@ def register(app, node, robot_ip: str, host_ip: str) -> None:
         return mod, mod.Robot(robot_ip, 6)
 
     @app.get('/api/robot/config')
-    async def robot_config() -> dict:
+    async def robot_config(request: Request) -> dict:
+        check_token(request)
         def work() -> dict:
             mod, robot = _robot()
             cfg = mod.read_config(robot)
@@ -125,22 +135,26 @@ def register(app, node, robot_ip: str, host_ip: str) -> None:
             return {'ok': False, 'message': str(exc)}
 
     @app.post('/api/robot/restart-app')
-    async def restart_app() -> dict:
+    async def restart_app(request: Request) -> dict:
+        check_token(request)
         # The robot's nodes vanish for a moment; stop driving into that.
         node.stop()
         return await _post_api('api/restart-app', 'application restart')
 
     @app.post('/api/robot/restart-ntpd')
-    async def restart_ntpd() -> dict:
+    async def restart_ntpd(request: Request) -> dict:
+        check_token(request)
         return await _post_api('api/restart-ntpd', 'ntpd restart')
 
     @app.post('/api/robot/reboot')
-    async def reboot() -> dict:
+    async def reboot(request: Request) -> dict:
+        check_token(request)
         node.stop()
         return await _post_api('api/reboot', 'reboot')
 
     @app.get('/api/robot/preflight')
-    async def preflight(quick: bool = False) -> dict:
+    async def preflight(request: Request, quick: bool = False) -> dict:
+        check_token(request)
         """Run the diagnostic ladder and return it as structured results."""
         script = os.path.join(_scripts_dir(), 'preflight_create3.sh')
         if not os.path.isfile(script):

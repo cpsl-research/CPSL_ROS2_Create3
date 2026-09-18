@@ -70,6 +70,13 @@ services:
       RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
       CREATE3_NAMESPACE: ${CREATE3_NAMESPACE:-cpsl_ugv_1}
       CREATE3_WEB_PORT: ${CREATE3_WEB_PORT:-8080}
+      # Bind address. 0.0.0.0 reaches this host on every interface, including
+      # any campus/office wifi it happens to be on. Set to the robot-subnet
+      # address to restrict it, at the cost of not reaching it from a laptop.
+      CREATE3_WEB_HOST: ${CREATE3_WEB_HOST:-0.0.0.0}
+      CREATE3_WEB_TELEMETRY_HZ: ${CREATE3_WEB_TELEMETRY_HZ:-10}
+      # Empty means NO AUTHENTICATION: anyone who can reach the port can drive
+      # the robot. Generate one into .env, see .env.example.
       CREATE3_WEB_TOKEN: ${CREATE3_WEB_TOKEN:-}
       CREATE3_WEB_MAX_LINEAR: ${CREATE3_WEB_MAX_LINEAR:-0.31}
       CREATE3_WEB_MAX_ANGULAR: ${CREATE3_WEB_MAX_ANGULAR:-1.90}

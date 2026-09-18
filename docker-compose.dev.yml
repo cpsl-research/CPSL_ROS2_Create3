@@ -8,32 +8,53 @@
 # host's own colcon tree was built against the host's ROS installation, and
 # letting the container write over it produces artifacts that work in neither
 # place.
+#
+# Note that a named volume is seeded from the image ONCE, when the volume is
+# first created, and is never refreshed afterwards. After a `docker compose
+# build` the dev stack keeps running the install tree captured in those volumes
+# until you either re-run the colcon service or delete them:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml down -v
+
+x-dev-volumes: &dev-volumes
+  - ./src:/ws/src
+  - create3-build:/ws/build
+  - create3-install:/ws/install
 
 services:
-  bringup: &dev-mounts
-    volumes:
-      - ./src:/ws/src
-      - create3-build:/ws/build
-      - create3-install:/ws/install
+  bringup:
+    volumes: *dev-volumes
 
-  teleop: *dev-mounts
-  shell: *dev-mounts
+  teleop:
+    volumes: *dev-volumes
+
+  shell:
+    volumes: *dev-volumes
+
+  # create3_web is the package most likely to be edited, being the GUI, so it
+  # needs the source mount too. Compose merges this with the ./scripts mount the
+  # base file gives it.
+  web:
+    volumes: *dev-volumes
 
   preflight:
-    volumes:
-      - ./src:/ws/src
-      - ./scripts:/ws/scripts:ro
-      - create3-build:/ws/build
-      - create3-install:/ws/install
+    volumes: *dev-volumes
 
   # Rebuild the workspace into the named volumes after editing src/.
+  #
+  # `extends` must name the file explicitly: without `file:` it resolves within
+  # THIS file, where `shell` carries only a volumes fragment and has no image or
+  # build context, which makes the service unresolvable and takes the whole
+  # compose project down with it.
   colcon:
     extends:
+      file: docker-compose.yml
       service: shell
     container_name: cpsl-create3-colcon
     profiles: ["tools"]
     tty: false
     stdin_open: false
+    volumes: *dev-volumes
     command: colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 
 volumes:
