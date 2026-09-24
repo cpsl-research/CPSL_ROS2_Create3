@@ -142,6 +142,28 @@ snapshot at 10 Hz, on the order of 5 KB/s, and works on a phone.
 See [`src/create3_web/README.md`](src/create3_web/README.md) for the safety model
 (velocity deadman, single-driver lock, speed caps, e-stop) and the HTTP interface.
 
+### Running the bringup from console instead
+
+[console](https://github.com/cpsl-research/console), the lab's setup and operations
+GUI, can host the bringup itself: Settings > Robot > **Bringup** builds and
+starts the same `create3_bringup` launch for the robot's namespace, inside
+console's own container or on the host console runs on. Use one or the other,
+not both, or every transform is published twice.
+
+What console builds is only `create3_bringup`, `tf_repub` and `odom_repub`, not
+`create3_examples`, so it never installs the examples' slam_toolbox stack. Its
+dependencies come from [`scripts/deps/create3.sh`](scripts/deps/create3.sh), the
+script this repo's Dockerfile also runs, so **add a new bringup dependency
+there** and it reaches both. The script is root, idempotent and quick when
+everything is installed; on a host run it with `sudo bash scripts/deps/create3.sh`.
+In console's container it runs before every build and on every container start.
+console's build goes to `build_docker/` and `install_docker/`, beside this
+repo's own `build/` and `install/`, never over them.
+
+If the bringup was running when console stopped, console starts it again when
+it comes back up (the `restart: unless-stopped` of the `bringup` service
+above); pressing Stop is what keeps it down.
+
 ### Why host networking
 
 `docker-compose.yml` sets `network_mode: host`, and that is a requirement rather than a
@@ -240,6 +262,9 @@ first to see what it would change; it is idempotent. See
    The last four are not needed by anything in this repository proper; they are
    dependencies of the `create3_examples` submodule, which `colcon build` builds
    unconditionally. `slam_toolbox` in particular is large.
+
+   The first two, plus the RMW and colcon/rosdep, are exactly what
+   `sudo bash scripts/deps/create3.sh` installs: enough for the bringup alone.
 
 > **Do not `apt install ros-jazzy-irobot-create-msgs`.** `src/irobot_create_msgs`
 > is a submodule built from source. Installing the apt package as well leaves two

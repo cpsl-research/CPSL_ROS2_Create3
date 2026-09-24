@@ -15,3 +15,8 @@ log/
 
 # local backups
 *.bak-*
+
+# console builds the bringup into its own bases when it hosts it in a container
+build_docker/
+install_docker/
+log_docker/

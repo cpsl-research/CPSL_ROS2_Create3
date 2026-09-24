@@ -1,4 +1,5 @@
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from nav_msgs.msg import Odometry
@@ -46,9 +47,15 @@ class OdomRepublisher(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = OdomRepublisher()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
+    try:
+        rclpy.spin(node)
+    except (KeyboardInterrupt, ExternalShutdownException):
+        # SIGINT from ros2 launch (or Ctrl-C) is how this node is stopped, not
+        # an error worth a traceback.
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.try_shutdown()
 
 if __name__ == '__main__':
     main()

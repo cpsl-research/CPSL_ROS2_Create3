@@ -21,12 +21,14 @@ ENV ROS_DISTRO=${ROS_DISTRO}
 ENV DEBIAN_FRONTEND=noninteractive
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# Workspace dependencies, pinned to their own layer so that editing source does
-# not re-run apt.
+# Workspace dependencies, pinned to their own layers so that editing source
+# does not re-run apt.
 #
-#   teleop_twist_keyboard  - create3_bringup + the teleop service
-#   nav2_common            - RewrittenYaml, used by create3_bringup's launch file
-#   rplidar_ros            - create3_examples/create3_lidar_slam
+# The bringup's own dependencies come from scripts/deps/create3.sh, the same
+# script console runs when it hosts the bringup in its own container, so a
+# dependency added there reaches both. The rest are this image's extras:
+#
+#   rplidar_ros                - create3_examples/create3_lidar_slam
 #   fastapi/uvicorn/websockets - create3_web's browser GUI
 #
 # This list does NOT cover the workspace. The `rosdep install` step below is
@@ -40,16 +42,15 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 #
 # Moving them up into this layer would change what is cached, not what is
 # installed. The size only goes away by not building create3_examples, which is
-# tracked in docs/BACKLOG.md (2b.4) and deliberately not done here.
+# tracked in docs/BACKLOG.md (2b.4) and deliberately not done here. (console,
+# which only runs the bringup, builds just its three packages and so skips it.)
+COPY scripts/deps/ /tmp/deps/
+RUN bash /tmp/deps/create3.sh && rm -rf /var/lib/apt/lists/*
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        python3-colcon-common-extensions \
-        python3-rosdep \
         python3-fastapi \
         python3-uvicorn \
         python3-websockets \
-        ros-${ROS_DISTRO}-rmw-fastrtps-cpp \
-        ros-${ROS_DISTRO}-teleop-twist-keyboard \
-        ros-${ROS_DISTRO}-nav2-common \
         ros-${ROS_DISTRO}-rplidar-ros \
         iputils-ping \
         iproute2 \

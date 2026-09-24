@@ -6,3 +6,6 @@ log/*
 # local machine config; commit .env.example instead
 .env
 .venv/
+build_docker/*
+install_docker/*
+log_docker/*
