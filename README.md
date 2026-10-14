@@ -17,15 +17,22 @@ and an extensive troubleshooting guide - see
 **[CPSL_Manuals/UGVs/iRobotCreate3_Hardware.md](https://github.com/cpsl-research/CPSL_Manuals/blob/main/UGVs/iRobotCreate3_Hardware.md)**.
 This README covers just this repository plus the minimum needed to talk to a robot.
 
+## TF and topics
+
+All of a robot's tf lives under its namespace (`/<ns>/tf`, `/<ns>/tf_static`) with unprefixed
+frames (`odom`, `base_link`); nothing publishes on global `/tf`. The Create 3 firmware already does
+this, so the bringup adds no tf. The contract:
+[TF_AND_TOPICS.md](https://github.com/cpsl-research/console/blob/feature/gui-redesign/docs/TF_AND_TOPICS.md).
+
 ---
 
 ## Packages in this repository
 
 | Package | What it does |
 |---|---|
-| `create3_bringup` | Launches `tf_repub` + `odom_repub` for a namespaced robot |
-| `tf_repub` | Subscribes to `<ns>/tf`, rewrites `odom -> base_link` with a namespace prefix, adds a derived `base_footprint` (z = 0), republishes on `/tf` |
-| `odom_repub` | Subscribes to `<ns>/odom`, rewrites the frame IDs with a namespace prefix, republishes on `<ns>/odom_repub` |
+| `create3_bringup` | Launches `odom_repub` for a namespaced robot |
+| `tf_repub` | **Retired, non-conformant, kept for reference; no longer started.** Copied `<ns>/tf` onto global `/tf` with slash-prefixed frames |
+| `odom_repub` | Subscribes to `<ns>/odom` (best-effort), republishes on `<ns>/odom_repub` (reliable) with the firmware's unprefixed `odom` / `base_link` frames |
 | `irobot_create_msgs` | submodule - iRobot's message/service/action definitions |
 | `create3_web` | Browser GUI: live telemetry, dock/undock, keyboard teleop, diagnostics ([docs](src/create3_web/README.md)) |
 | `create3_examples` | submodule - iRobot's example packages (coverage, teleop, lidar SLAM, ...) |
@@ -148,9 +155,9 @@ See [`src/create3_web/README.md`](src/create3_web/README.md) for the safety mode
 GUI, can host the bringup itself: Settings > Robot > **Bringup** builds and
 starts the same `create3_bringup` launch for the robot's namespace, inside
 console's own container or on the host console runs on. Use one or the other,
-not both, or every transform is published twice.
+not both.
 
-What console builds is only `create3_bringup`, `tf_repub` and `odom_repub`, not
+What console builds is only `create3_bringup`, `tf_repub` (retired, still built) and `odom_repub`, not
 `create3_examples`, so it never installs the examples' slam_toolbox stack. Its
 dependencies come from [`scripts/deps/create3.sh`](scripts/deps/create3.sh), the
 script this repo's Dockerfile also runs, so **add a new bringup dependency
@@ -593,7 +600,7 @@ ros2 node list
 ```
 
 Expect **more** than ten once this stack is running: `create3_bringup` adds
-`/cpsl_ugv_1/tf_repub` and `/cpsl_ugv_1/odom_repub`, and the web GUI adds
+`/cpsl_ugv_1/odom_repub`, and the web GUI adds
 `/create3_web`. Anything else on the same domain shows up too. Ten is the floor
 for "the robot is there", not the total.
 
@@ -644,8 +651,8 @@ namespace assigned.
 
 ### 1. Bring up the CPSL Create 3 nodes
 
-Launches `tf_repub` and `odom_repub` so the rest of the CPSL stack sees a namespaced tf tree
-and odometry:
+Launches `odom_repub`, a reliable copy of the robot's odometry on `<ns>/odom_repub` (the
+firmware's own `<ns>/tf` is untouched):
 
 ```bash
 cd CPSL_ROS2_Create3
@@ -685,23 +692,12 @@ ros2 service call /cpsl_ugv_1/reset_pose irobot_create_msgs/srv/ResetPose \
   "pose: {position: {x: 0, y: 0, z: 0}, orientation: {x: 0, y: 0, z: 0, w: 1}}"
 ```
 
-### 6. Republishing the tf tree from the Create 3
+### 6. Republishing the tf tree from the Create 3 (retired)
 
-To access the robot's tf tree from another server or device, run the relay node. It
-republishes the robot's namespaced `/tf` onto the global `/tf`:
-
-```bash
-cd CPSL_ROS2_Create3
-source install/setup.bash
-ros2 run tf_repub tf_repub
-```
-
-On the receiving machine, nothing special is needed -- `tf_repub` publishes onto the
-global `/tf`, which is where every tf2 consumer already looks:
-
-```bash
-rviz2
-```
+The `tf_repub` relay is retired: it copied the robot's tf onto global `/tf` with slash-prefixed
+frames, which tf2 rejects, and it breaks the TF protocol above. Read the robot's tree from
+`/<ns>/tf` and `/<ns>/tf_static` instead, for example
+`ros2 run tf2_tools view_frames --ros-args -r /tf:=/cpsl_ugv_1/tf -r /tf_static:=/cpsl_ugv_1/tf_static`.
 
 ### 7. Other available actions
 

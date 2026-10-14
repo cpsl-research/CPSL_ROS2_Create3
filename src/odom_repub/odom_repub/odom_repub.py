@@ -12,10 +12,8 @@ class OdomRepublisher(Node):
         self.namespace = self.get_namespace()
         if self.namespace == '/':
             self.namespace = ''
-            self.tf_prefix = ''
             self.odom_topic = "/odom"
         else:
-            self.tf_prefix = "{}/".format(self.namespace)
             self.odom_topic = "{}/odom".format(self.namespace)
 
         # Define a best-effort QoS profile for subscription
@@ -38,9 +36,10 @@ class OdomRepublisher(Node):
         )
 
     def odom_callback(self, msg: Odometry):
-        # Republish the received Odometry message with updated frame IDs
-        msg.header.frame_id = "{}odom".format(self.tf_prefix)
-        msg.child_frame_id = "{}base_link".format(self.tf_prefix)
+        # Republish with the firmware's own frame ids. Frames are never
+        # prefixed (TF protocol): the namespace lives in the topic, not the frame.
+        msg.header.frame_id = "odom"
+        msg.child_frame_id = "base_link"
 
         self.publisher.publish(msg)
 

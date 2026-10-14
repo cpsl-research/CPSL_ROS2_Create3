@@ -1,4 +1,3 @@
-from ament_index_python.packages import get_package_share_directory
 import os
 from launch import LaunchDescription
 from launch.actions import (
@@ -14,9 +13,6 @@ from launch_ros.actions import PushRosNamespace, SetRemap, Node
 from launch_ros.descriptions import ComposableNode, ParameterFile
 from nav2_common.launch import RewrittenYaml
 
-
-#locating other packages
-pkg_tf_repub = get_package_share_directory('tf_repub')
 
 #ROS2 launch arguments
 ARGUMENTS = [
@@ -38,13 +34,9 @@ def launch_setup(context, *args, **kwargs):
     bringup_group = GroupAction([
         PushRosNamespace(namespace),
 
-        Node(
-            package='tf_repub',
-            executable='tf_repub',
-            name='tf_repub',
-            output='screen',
-            parameters=[]
-        ),
+        # tf_repub is retired (it put slashed, prefixed frames on global /tf; see
+        # docs/BACKLOG.md 1.1). The firmware's own /<ns>/tf and /<ns>/tf_static
+        # already carry the unprefixed tree, so only odom_repub runs here.
         Node(
             package='odom_repub',
             executable='odom_repub',

@@ -21,7 +21,9 @@ including what each fix was and how it was tested, is in the history of this fil
 
 ## 1. Correctness
 
-### 1.1 `tf_repub` and `odom_repub` emit frame IDs with a leading slash — `DEFERRED`
+### 1.1 `tf_repub` and `odom_repub` emit frame IDs with a leading slash — `RESOLVED`
+
+**Resolved by retirement under the TF protocol:** the bringup no longer starts `tf_repub`, and `odom_repub` republishes the firmware's unprefixed `odom` / `base_link`. The original analysis is kept below.
 
 `src/tf_repub/tf_repub/tf_repub.py:12-17` (and `src/odom_repub/odom_repub/odom_repub.py:40-41`)
 
