@@ -34,9 +34,8 @@ def launch_setup(context, *args, **kwargs):
     bringup_group = GroupAction([
         PushRosNamespace(namespace),
 
-        # tf_repub is retired (it put slashed, prefixed frames on global /tf; see
-        # docs/BACKLOG.md 1.1). The firmware's own /<ns>/tf and /<ns>/tf_static
-        # already carry the unprefixed tree, so only odom_repub runs here.
+        # No tf relay runs here: the firmware's own /<ns>/tf and /<ns>/tf_static
+        # already carry the unprefixed tree, so only odom_repub is needed.
         Node(
             package='odom_repub',
             executable='odom_repub',

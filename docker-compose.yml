@@ -43,8 +43,8 @@ x-create3-common: &create3-common
   init: true
 
 services:
-  # The always-on service: republishes a namespaced tf tree and odometry for
-  # the rest of the CPSL stack.
+  # The always-on service: republishes the robot's odometry (reliable QoS)
+  # for the rest of the CPSL stack.
   bringup:
     <<: *create3-common
     container_name: cpsl-create3-bringup
