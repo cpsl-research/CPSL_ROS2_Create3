@@ -28,22 +28,10 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # script console runs when it hosts the bringup in its own container, so a
 # dependency added there reaches both. The rest are this image's extras:
 #
-#   rplidar_ros                - create3_examples/create3_lidar_slam
 #   fastapi/uvicorn/websockets - create3_web's browser GUI
 #
-# This list does NOT cover the workspace. The `rosdep install` step below is
-# sometimes described as a safety net that should install nothing; it is not.
-# It resolves three more packages every single build -- ros-jazzy-joy,
-# ros-jazzy-teleop-twist-joy and ros-jazzy-slam-toolbox, all of them
-# dependencies of the create3_examples submodule rather than of anything in this
-# repository -- and those three drag in roughly 400 transitive packages and over
-# a gigabyte of installed size (measured on ros:jazzy-ros-base, 2026-09-18).
-# That is the dominant cost of this image.
-#
-# Moving them up into this layer would change what is cached, not what is
-# installed. The size only goes away by not building create3_examples, which is
-# tracked in docs/BACKLOG.md (2b.4) and deliberately not done here. (console,
-# which only runs the bringup, builds just its three packages and so skips it.)
+# The workspace's remaining dependencies are resolved by the `rosdep install`
+# step below.
 COPY scripts/deps/ /tmp/deps/
 RUN bash /tmp/deps/create3.sh && rm -rf /var/lib/apt/lists/*
 
@@ -51,7 +39,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-fastapi \
         python3-uvicorn \
         python3-websockets \
-        ros-${ROS_DISTRO}-rplidar-ros \
         iputils-ping \
         iproute2 \
         curl \
