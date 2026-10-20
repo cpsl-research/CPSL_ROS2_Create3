@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Create 3 bringup: what create3_bringup, tf_repub and odom_repub need to build
+# Create 3 bringup: what create3_bringup and odom_repub need to build
 # and run -- the always-on stack that republishes the robot's namespaced tf
 # tree and odometry for the rest of the CPSL stack.
 #
