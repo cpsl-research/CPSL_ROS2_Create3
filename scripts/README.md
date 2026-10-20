@@ -127,8 +127,9 @@ discovery succeed while no user data ever flows: **discovery gives you something
 data gives you nothing.** Topic names are still advertised, and whether nodes are
 listed depends on whether the long-lived `ros2` daemon answers from its cache or
 the query goes to the network. So neither an empty nor a full `ros2 node list`
-settles it — only receiving a message does. `README.md` has the full table and
-the `--no-daemon` / `ros2 daemon stop` explanation.
+settles it — only receiving a message does. See
+[`docs/tutorials/04_dds_pitfalls.md`](../docs/tutorials/04_dds_pitfalls.md) for the
+`--no-daemon` / `ros2 daemon stop` explanation.
 
 > **Layer 5 is skipped, not failed, when the `ros2` CLI is not on `PATH`** — it
 > reports `the ros2 CLI is not on PATH; skipping discovery checks` as a warning.
@@ -209,7 +210,7 @@ intentionally a separate subcommand and is never part of `apply`.
 
 Full hardware and network documentation, including the host-side setup these scripts
 assume, is in
-[`CPSL_Manuals/UGVs/iRobotCreate3_Hardware.md`](https://github.com/davidmhunt/CPSL_Manuals/blob/main/UGVs/iRobotCreate3_Hardware.md).
+[`CPSL_Manuals/UGVs/iRobotCreate3_Hardware.md`](https://github.com/cpsl-research/CPSL_Manuals/blob/main/UGVs/iRobotCreate3_Hardware.md).
 
 Web UI endpoints used by `configure_create3.py`, verified against firmware
 `create3+I.0.0.FastDDS` (sku `RCi3099`, ROS 2 Iron):
