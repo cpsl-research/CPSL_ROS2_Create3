@@ -38,7 +38,7 @@ rosdep install -i --from-path src --rosdistro jazzy -y     # run from the repo r
 
 ## 3. Set the DDS environment
 
-Put the five exports of [tutorial 04](04_dds_pitfalls.md#host-environment-for-the-native-path)
+Put the `~/.bashrc` block of [tutorial 04](04_dds_pitfalls.md#host-environment-for-the-native-path)
 in `~/.bashrc` and open a new terminal. Without them the robot's topics do not appear.
 
 ## 4. Build

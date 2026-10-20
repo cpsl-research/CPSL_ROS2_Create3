@@ -1,7 +1,7 @@
 # CPSL ROS 2 Create 3
 
 ROS 2 packages, host/robot setup scripts and a Docker stack for driving an iRobot Create 3 from a
-lab computer, on hardware or (see the manuals) in simulation. Everything here works without any
+lab computer, on hardware. Everything here works without any
 other CPSL repository.
 
 - Host: **Ubuntu 24.04**, **ROS 2 Jazzy** ([official install guide](https://docs.ros.org/en/jazzy/Installation/Ubuntu-Install-Debs.html))

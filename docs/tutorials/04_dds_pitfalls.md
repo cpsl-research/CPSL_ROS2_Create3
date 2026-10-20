@@ -46,7 +46,7 @@ If the robot powered on without its Ethernet cable, reboot it
 
 ## Host environment for the native path
 
-Put these in `~/.bashrc` (the Docker stack sets the same values itself, from `.env`):
+Put these in `~/.bashrc` (the Docker stack sets `ROS_DOMAIN_ID`, `RMW_IMPLEMENTATION` and `ROS_AUTOMATIC_DISCOVERY_RANGE` itself; it does not set `ROS_STATIC_PEERS`):
 
 ```bash
 source /opt/ros/jazzy/setup.bash
