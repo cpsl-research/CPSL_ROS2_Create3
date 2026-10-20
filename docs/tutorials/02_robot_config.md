@@ -17,7 +17,8 @@ scripts/configure_create3.py apply              # apply, after a confirmation pr
 
 `apply --yes` skips the prompt. It is idempotent: run it again and it reports
 `already up to date` and sends nothing. After applying it restarts the robot application and
-waits for the robot's ten nodes to appear.
+waits for the robot's ten nodes to appear (`mobility`, `motion_control`, `robot_state`,
+`system_health`, `ui_mgr` and five more).
 
 Defaults, overridable with `--robot`, `--nuc`, `--namespace`, `--domain-id`, `--rmw`:
 

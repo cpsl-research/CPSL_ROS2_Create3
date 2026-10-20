@@ -3,6 +3,8 @@
 The robot runs ROS 2 **Iron** and your host runs **Jazzy**. They interoperate over plain RTPS/UDP,
 but three things fail silently: the robot looks fine, `ping` works, the web UI works, and no data
 arrives. [Tutorial 03](03_verify_link.md) checks all of them; this page explains why.
+**What you must do:** sections 1 (do not set `LARGE_DATA`) and 2 (run `configure_create3.py apply`),
+and for the native path the `~/.bashrc` block below. The rest is background.
 
 ## 1. Never set `FASTDDS_BUILTIN_TRANSPORTS=LARGE_DATA` on the host
 
@@ -64,7 +66,5 @@ An XML profile (`FASTRTPS_DEFAULT_PROFILES_FILE`) is optional; if you use one, p
 
 ## Why the container uses host networking
 
-`docker-compose.yml` sets `network_mode: host`; it is required. On a bridge network the
-container advertises its private `172.x` address, which the robot cannot route back to, and
-multicast never leaves the bridge. `ipc: host` and `pid: host` let Fast DDS shared memory work
-between containers and host processes.
+`network_mode: host` is required: on a bridge network the container advertises a private `172.x`
+address the robot cannot route back to, and multicast never leaves the bridge.

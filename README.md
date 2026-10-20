@@ -8,9 +8,8 @@ other CPSL repository.
 - Robot firmware: **`I.0.0.FastDDS`**, which runs ROS 2 **Iron**. The Iron/Jazzy mismatch has two
   consequences ([tutorial 04](docs/tutorials/04_dds_pitfalls.md)): never set
   `FASTDDS_BUILTIN_TRANSPORTS=LARGE_DATA` on the host, and the robot needs an RMW profile override.
-- Wiring, the host's static IP, chrony and troubleshooting:
-  [CPSL_Manuals: iRobotCreate3_Hardware.md](https://github.com/cpsl-research/CPSL_Manuals/blob/main/UGVs/iRobotCreate3_Hardware.md).
-  Simulation: [iRobotCreate3_Simulation.md](https://github.com/cpsl-research/CPSL_Manuals/blob/main/UGVs/iRobotCreate3_Simulation.md).
+- Wiring and firmware: [tutorial 1](docs/tutorials/01_host_setup.md#before-you-start). Optional lab photos and
+  simulation notes: [CPSL_Manuals](https://github.com/cpsl-research/CPSL_Manuals/blob/main/UGVs/iRobotCreate3_Hardware.md).
 
 ## What is in here
 
@@ -25,8 +24,10 @@ other CPSL repository.
 
 ## Quick start
 
-Run the three scripts in order; each tutorial explains one. `bootstrap_host.sh` needs a
-**NetworkManager** host (`nmcli`), such as Ubuntu Desktop; Ubuntu Server does not have it.
+Run the three scripts in order; each tutorial explains one. You need a **NetworkManager** host
+(Ubuntu Desktop, not Server) and a robot with its adapter board fitted, cabled to the host and
+powered on; [tutorial 1](docs/tutorials/01_host_setup.md#before-you-start) has the checklist,
+including how to read the firmware version.
 
 ```bash
 git clone --recurse-submodules https://github.com/cpsl-research/CPSL_ROS2_Create3
@@ -35,7 +36,7 @@ scripts/bootstrap_host.sh --dry-run     # preview, then: sudo scripts/bootstrap_
 scripts/configure_create3.py apply      # the robot's own flash configuration
 ```
 
-Then either path:
+Then **one** of these two paths (Docker or native, not both):
 
 ```bash
 cp .env.example .env                    # set CREATE3_WEB_TOKEN (tutorial 05)
@@ -56,7 +57,6 @@ ros2 launch create3_bringup create3_bringup.launch.py namespace:=cpsl_ugv_1
 5. [Run with Docker](docs/tutorials/05_run_with_docker.md) 6. [Native install](docs/tutorials/06_native_install.md)
 
 Developers: [docs/DEVELOPING.md](docs/DEVELOPING.md); open items: [TODO.md](TODO.md).
-Optional: the lab's console app can also host this bringup; nothing here needs it.
 Create 3 references: [adapter board](https://iroboteducation.github.io/create3_docs/hw/adapter/),
 [NTP](https://iroboteducation.github.io/create3_docs/setup/compute-ntp/),
 [Fast DDS](https://iroboteducation.github.io/create3_docs/setup/xml-config/).

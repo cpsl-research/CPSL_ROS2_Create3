@@ -29,14 +29,19 @@ also needs three Python packages, which `rosdep` finds from `package.xml`:
 
 ```bash
 sudo rosdep init                         # once per machine; ignore "already exists"
-rosdep update
+rosdep update                            # (rosdep itself came from the script above)
 rosdep install -i --from-path src --rosdistro jazzy -y     # run from the repo root
 ```
 
 > **Do not `apt install ros-jazzy-irobot-create-msgs`.** `src/irobot_create_msgs` is built from
 > source; with the apt package too you get two copies of the interfaces and a version-skew trap.
 
-## 3. Build
+## 3. Set the DDS environment
+
+Put the five exports of [tutorial 04](04_dds_pitfalls.md#host-environment-for-the-native-path)
+in `~/.bashrc` and open a new terminal. Without them the robot's topics do not appear.
+
+## 4. Build
 
 ```bash
 source /opt/ros/jazzy/setup.bash
@@ -45,10 +50,9 @@ source install/setup.bash
 ```
 
 You should see `Summary: 4 packages finished` (`irobot_create_msgs`, `odom_repub`,
-`create3_bringup`, `create3_web`). Each new terminal needs both `source` lines, and the host
-environment of [tutorial 04](04_dds_pitfalls.md) (domain id, RMW, `ROS_STATIC_PEERS`).
+`create3_bringup`, `create3_web`). Each new terminal needs both `source` lines.
 
-## 4. Run
+## 5. Run
 
 ```bash
 ros2 launch create3_bringup create3_bringup.launch.py namespace:=cpsl_ugv_1
@@ -67,7 +71,7 @@ ros2 launch create3_web create3_web.launch.py namespace:=cpsl_ugv_1
 then open `http://localhost:8080/?token=<token>`. Verify the link first with
 `scripts/preflight_create3.sh` ([tutorial 03](03_verify_link.md)).
 
-## 5. Drive the robot
+## 6. Drive the robot
 
 Replace `cpsl_ugv_1` with your namespace.
 
@@ -77,19 +81,9 @@ ros2 action send_goal /cpsl_ugv_1/dock irobot_create_msgs/action/Dock "{}"
 ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args --remap /cmd_vel:=/cpsl_ugv_1/cmd_vel
 ros2 service call /cpsl_ugv_1/reset_pose irobot_create_msgs/srv/ResetPose \
   "pose: {position: {x: 0, y: 0, z: 0}, orientation: {x: 0, y: 0, z: 0, w: 1}}"
-ros2 action list | grep cpsl_ugv_1       # dock, undock, drive_arc, drive_distance, rotate_angle,
-                                         # navigate_to_position, wall_follow, led_animation, ...
 ```
 
-The robot undocks and moves, so clear the space first. To read its tf, remap into the namespace:
-`ros2 run tf2_tools view_frames --ros-args -r /tf:=/cpsl_ugv_1/tf -r /tf_static:=/cpsl_ugv_1/tf_static`
-(needs `ros-jazzy-tf2-tools`).
+The robot undocks and moves, so clear the space first. `ros2 action list | grep cpsl_ugv_1` shows the
+other actions (`drive_distance`, `rotate_angle`, ...).
 
-## If `ros2 run` cannot import a Python package
-
-`ros2` and `colcon` use the system `/usr/bin/python3` whatever virtualenv is active. If you
-install the GUI's Python packages into a `uv` virtualenv instead of with `rosdep`, build it on
-the system interpreter with `uv venv --python /usr/bin/python3.12 --python-preference only-system
---system-site-packages .venv`, and after `source install/setup.bash` run
-`export PYTHONPATH="$PWD/.venv/lib/python3.12/site-packages:$PYTHONPATH"` (in that order).
-Activating the virtualenv does nothing.
+Using a `uv` virtualenv for the GUI instead of `rosdep`: see [DEVELOPING](../DEVELOPING.md).

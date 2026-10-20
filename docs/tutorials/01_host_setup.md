@@ -5,10 +5,24 @@ host and cannot live in a container: a **static IP** on the wired link to the ro
 server** (the Create 3 has no battery-backed clock, so it takes its time from the host), and
 **Docker** if you want the container path.
 
-You need: Ubuntu 24.04 **with NetworkManager** (Ubuntu Desktop has it; Ubuntu Server uses
-netplan/networkd and does not, so `nmcli` is missing), a wired Ethernet port, and the robot
-connected to it by cable and powered on. Install ROS 2 separately only for the native path
-([tutorial 06](06_native_install.md)).
+## Before you start
+
+- **Host:** Ubuntu 24.04 **with NetworkManager** (Ubuntu Desktop has it; Ubuntu Server uses
+  netplan/networkd and has no `nmcli`) and a wired Ethernet port. Install ROS 2 separately
+  only for the native path ([tutorial 06](06_native_install.md)).
+- **Robot:** an iRobot Create 3 with the **adapter board** fitted, its **USB/BLE toggle set to
+  USB**, and the wired link (Ethernet over the robot's USB host port) cabled to the host's
+  Ethernet port. Charged, or on the dock, and powered on (the light ring settles to a soft
+  white and the robot plays a start-up sound). iRobot documents the board and the toggle:
+  [Adapter Board](https://iroboteducation.github.io/create3_docs/hw/adapter/).
+- **Firmware:** the lab runs **`I.0.0.FastDDS`** (ROS 2 Iron); the scripts were verified against
+  `create3+I.0.0.FastDDS`. To check, once the host has its address (below), open
+  `http://192.168.186.2` in a browser: the Home page shows the firmware version, and the Update
+  page shows the current ROS 2 version and lets you choose or upload another release
+  ([Webserver docs](https://iroboteducation.github.io/create3_docs/webserver/update/)). If it
+  is not an `I.0.0.FastDDS` build, flash that one first.
+- Optional: the lab's [CPSL_Manuals](https://github.com/cpsl-research/CPSL_Manuals/blob/main/UGVs/iRobotCreate3_Hardware.md)
+  has photos of the lab's wiring; nothing here depends on it.
 
 ## Fixed addresses
 
@@ -55,8 +69,9 @@ What it does, and nothing more if it is already true:
 2. **Time.** Installs `chrony` if missing and appends `allow 192.168.186.0/24` to
    `/etc/chrony/chrony.conf` (backing the file up first), then restarts chrony.
 3. **Docker.** If Docker is missing, installs it with Docker's convenience script
-   (`get.docker.com`); adds you to the `docker` group. **Log out and back in** for the group
-   to take effect.
+   (`get.docker.com`, a script downloaded from Docker and run as root; skip with `--skip-docker`
+   and install Docker yourself if you would rather not); adds you to the `docker` group.
+   **Log out and back in** for the group to take effect.
 
 Skip a section with `--skip-network`, `--skip-ntp` or `--skip-docker`.
 

@@ -14,8 +14,10 @@ set -a; source .env; set +a                               # a native shell does 
 ros2 launch create3_web create3_web.launch.py namespace:=cpsl_ugv_1
 ```
 
-Open **`http://<host>:8080/?token=<token>`**. The packages build without the three Python
-dependencies but the node will not start.
+Open **`http://<host>:8080/?token=<token>`** (`localhost` on the same machine; the token is
+`CREATE3_WEB_TOKEN`). First drive: the tiles should fill with battery and odometry within a
+second; press **Undock**, then **Take control** and hold <kbd>W</kbd>. The packages build
+without the three Python dependencies but the node will not start.
 
 ## What it shows
 
@@ -71,20 +73,6 @@ browser must) or as an **`X-Auth-Token`** header (prefer this for scripts: it st
 Limits: the query string appears in history and proxy logs, and there is no TLS; put it behind an
 HTTPS reverse proxy before it leaves a trusted network. To restrict by network instead, set
 `CREATE3_WEB_HOST` to the robot-subnet address (then wifi clients cannot reach it).
-
-## HTTP interface
-
-| Method | Path | Purpose |
-|---|---|---|
-| `GET` | `/`, `/api/state` | the page; one telemetry snapshot as JSON |
-| `WS` | `/ws` | telemetry down, velocity commands up |
-| `POST` | `/api/dock`, `/api/undock`, `/api/cancel`, `/api/estop` | dock actions; e-stop `{"engaged": true\|false}` |
-| `GET` | `/api/robot/config`, `/api/robot/preflight` | robot configuration; preflight ladder |
-| `POST` | `/api/robot/restart-app`, `/restart-ntpd`, `/reboot` | robot control |
-
-```bash
-curl -s -H "X-Auth-Token: $CREATE3_WEB_TOKEN" localhost:8080/api/state | jq '.battery.percentage'
-```
 
 rosbridge was not used: it forwards every topic at the publisher's rate. Here callbacks only
 write a snapshot that the web layer samples slowly. For point clouds and images run

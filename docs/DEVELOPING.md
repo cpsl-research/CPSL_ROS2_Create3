@@ -59,6 +59,33 @@ passes. A red `colcon test` is therefore not new. Checks that need no robot: `ba
 Namespaces have no leading slash in `.env` (`CREATE3_NAMESPACE=cpsl_ugv_1`) and a leading slash
 in the scripts' `--namespace`. Open items are in [TODO.md](../TODO.md).
 
+## The web GUI's HTTP interface
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/`, `/api/state` | the page; one telemetry snapshot as JSON |
+| `WS` | `/ws` | telemetry down, velocity commands up |
+| `POST` | `/api/dock`, `/api/undock`, `/api/cancel`, `/api/estop` | dock actions; e-stop `{"engaged": true\|false}` |
+| `GET` | `/api/robot/config`, `/api/robot/preflight` | robot configuration; preflight ladder |
+| `POST` | `/api/robot/restart-app`, `/restart-ntpd`, `/reboot` | robot control |
+
+With a token set, everything except `/static/*` returns 401 without `?token=` or an
+`X-Auth-Token` header (websocket close code 4401).
+`curl -s -H "X-Auth-Token: $CREATE3_WEB_TOKEN" localhost:8080/api/state | jq '.battery.percentage'`.
+
+## Developing with Docker and with a virtualenv
+
+- **Edit source without rebuilding the image:**
+  `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d`, then
+  `... run --rm colcon` after edits. The override mounts `./src` and keeps `build/` and
+  `install/` in named volumes, which are seeded from the image once: `docker compose build`
+  alone will not change what the dev stack runs; re-run `colcon`, or `... down -v` to reset.
+- **uv virtualenv instead of `rosdep`:** `ros2` and `colcon` use the system `/usr/bin/python3`
+  whatever virtualenv is active. Build it on that interpreter,
+  `uv venv --python /usr/bin/python3.12 --python-preference only-system --system-site-packages .venv`,
+  and after `source install/setup.bash` run
+  `export PYTHONPATH="$PWD/.venv/lib/python3.12/site-packages:$PYTHONPATH"` (in that order).
+
 ## Appendix: submodule and image notes
 
 - `src/irobot_create_msgs` pins commit `b4986ef`. The `.gitmodules` file declares it only.
