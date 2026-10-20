@@ -24,9 +24,6 @@ native host; with Docker use the container, below).
 | 4. Robot-side configuration | domain id, namespace and RMW agree with the host; discovery server off; RMW override names the host; `ntp.conf` points at the host; clock skew under 5 s | [tutorial 02](02_robot_config.md); each failure prints a `fix` line |
 | 5. DDS discovery and live data | all ten robot nodes discovered, 20+ topics, and **a message actually received** on `battery_state` and `dock_status` | discovery works but data does not: tutorial 04 |
 
-Layer 5 reads real messages, not just the node list, on purpose: a transport mismatch lets
-discovery succeed while no data ever flows.
-
 ## Exit status
 
 | | |

@@ -23,9 +23,6 @@ other CPSL repository.
 | `scripts/` | `bootstrap_host.sh` (host), `configure_create3.py` (robot), `preflight_create3.sh` (link check); see [scripts/README.md](scripts/README.md) |
 | `docker/`, `docker-compose*.yml`, `.env.example` | The same stack as a container |
 
-All tf lives under the robot's namespace (`/<ns>/tf`) with unprefixed frames; the bringup adds none
-([TF_AND_TOPICS.md](https://github.com/cpsl-research/console/blob/main/docs/TF_AND_TOPICS.md)).
-
 ## Quick start
 
 Run the three scripts in order; each tutorial explains one. `bootstrap_host.sh` needs a

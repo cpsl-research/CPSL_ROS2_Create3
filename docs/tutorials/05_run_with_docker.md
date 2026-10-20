@@ -47,8 +47,7 @@ docker compose run --rm preflight
 ```
 
 This runs `scripts/preflight_create3.sh` with the container's ROS 2, so layer 5 really tests
-data flow ([tutorial 03](03_verify_link.md)). Do not rely on the host copy on a Docker-only
-machine.
+data flow ([tutorial 03](03_verify_link.md)).
 
 ## 4. Use it
 
@@ -62,10 +61,7 @@ machine.
 
 ### The web GUI (`create3_web`)
 
-Open `http://<this host>:8080/?token=<token>`. It shows battery, dock state, odometry trail
-and hazards, has dock/undock buttons and keyboard (WASD) teleop, and runs the setup scripts from
-its diagnostics panel. Take control first; others are read-only, a velocity deadman zeroes the
-command after 400 ms of silence, and anyone can e-stop. Full reference:
+Open `http://<this host>:8080/?token=<token>`. Panels, driving rules and settings:
 [`src/create3_web/README.md`](../../src/create3_web/README.md). Change the token with
 `docker compose up -d web` after editing `.env`; open tabs then need the new URL.
 

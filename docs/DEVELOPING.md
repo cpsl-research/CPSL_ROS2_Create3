@@ -28,9 +28,7 @@ holds system dependencies only: the static IP, chrony and shell rc files belong 
 `scripts/bootstrap_host.sh`. Another tool (such as the lab's console app) may run the script and
 build only `odom_repub create3_bringup`, so keep the bringup independent of `create3_web`.
 
-Compose services are in `docker-compose.yml`; `docker-compose.dev.yml` mounts `./src` and adds a
-`colcon` rebuild service ([tutorial 05](tutorials/05_run_with_docker.md)). The entrypoint refuses to
-start if `FASTDDS_BUILTIN_TRANSPORTS` contains `LARGE_DATA`; keep that guard.
+The entrypoint refuses to start if `FASTDDS_BUILTIN_TRANSPORTS` contains `LARGE_DATA`; keep that guard.
 
 ## Scripts
 
@@ -54,8 +52,7 @@ colcon test --packages-select create3_bringup odom_repub && colcon test-result -
 Known state at this writing (2026-10-20): `test_flake8` fails on both packages (unused imports in
 the launch file, quote style in `odom_repub.py`) and `test_copyright` is skipped; `test_pep257`
 passes. A red `colcon test` is therefore not new. Checks that need no robot: `bash -n scripts/*.sh`, `python3 scripts/configure_create3.py
---help`, `scripts/bootstrap_host.sh --dry-run`, `docker compose config -q`. Everything else
-needs a robot.
+--help`, `scripts/bootstrap_host.sh --dry-run`, `docker compose config -q`.
 
 ## Conventions
 

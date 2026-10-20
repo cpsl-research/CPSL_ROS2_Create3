@@ -39,8 +39,8 @@ override adds your host as a Fast DDS initial peer. `configure_create3.py apply`
 
 ## 3. Boot order
 
-The robot configures networking and DDS **at boot**. If it powered on without its Ethernet cable,
-*Restart application* does nothing useful: `scripts/configure_create3.py reboot`.
+If the robot powered on without its Ethernet cable, reboot it
+([tutorial 02](02_robot_config.md#boot-order-matters)).
 
 ## Host environment for the native path
 

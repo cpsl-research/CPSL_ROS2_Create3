@@ -6,18 +6,10 @@ and a diagnostics panel backed by the setup scripts. It sends a JSON snapshot at
 
 ## Running it
 
-With Docker it is a compose service ([tutorial 05](../../docs/tutorials/05_run_with_docker.md)):
+With Docker it is a compose service (`docker compose up -d`; [tutorial 05](../../docs/tutorials/05_run_with_docker.md)).
+Natively, install and build as in [tutorial 06](../../docs/tutorials/06_native_install.md), then:
 
 ```bash
-docker compose up -d          # bringup + web
-```
-
-Natively ([tutorial 06](../../docs/tutorials/06_native_install.md)); run from the workspace root,
-since `src` is relative:
-
-```bash
-rosdep install -i --from-path src --rosdistro jazzy -y   # fastapi, uvicorn, websockets
-colcon build --packages-select create3_web && source install/setup.bash
 set -a; source .env; set +a                               # a native shell does not read .env
 ros2 launch create3_web create3_web.launch.py namespace:=cpsl_ugv_1
 ```
@@ -69,13 +61,9 @@ All settings are environment variables (compose reads `.env`):
 ## Access control
 
 The GUI binds every interface, so on a shared network anyone who reaches the port can drive the
-robot unless a token is set. Generate one (do not invent one or reuse it across machines), put it
-in the gitignored `.env`, and restart the web service:
-
-```bash
-python3 -c "import secrets; print(secrets.token_urlsafe(24))"   # CREATE3_WEB_TOKEN=<value>
-chmod 600 .env && docker compose up -d web
-```
+robot unless a token is set. Generate one ([tutorial 05](../../docs/tutorials/05_run_with_docker.md) shows how; do not invent
+one or reuse it across machines), put it in the gitignored `.env`, and restart the web service
+(`docker compose up -d web`).
 
 With a token set, the page, `/api/*` and `/api/robot/*` return **401** without it and the websocket
 closes with code **4401**; `/static/*` is not gated (inert JS and CSS). Send it as `?token=` (the
