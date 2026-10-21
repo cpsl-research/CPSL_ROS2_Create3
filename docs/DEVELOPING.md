@@ -18,7 +18,7 @@ any change to frames or topics must keep to it.
 
 ## How the bringup is built
 
-`scripts/deps/create3.sh` (root, idempotent, uses `scripts/deps/_common.sh`) installs the system
+`scripts/deps/create3.sh` (root, idempotent, uses `scripts/deps/_common.sh`; `bash scripts/deps/create3.sh --check` needs no root, installs nothing and lists what is missing) installs the system
 dependencies of `create3_bringup` and `odom_repub`: colcon, rosdep, `nav2_common`,
 `teleop_twist_keyboard`, `rmw_fastrtps_cpp`. `docker/Dockerfile` runs the same script, then adds
 the GUI's Python packages and the tools the in-container preflight needs (`iputils-ping`,

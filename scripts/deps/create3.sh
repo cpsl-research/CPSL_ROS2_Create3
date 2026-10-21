@@ -17,13 +17,37 @@
 # version-skew trap docs/tutorials/06_native_install.md warns about. A bringup-only build (console)
 # gets it from wherever the machine already has it: console's image installs
 # the apt package for its own node, and rosdep resolves it otherwise.
-source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
-
+#
+# Usage:
+#   sudo bash create3.sh           install whatever is missing
+#   bash create3.sh --check        no root, installs nothing: exit 0 if every package
+#                                below is installed, else exit 1 and list the missing
+#                                ones on stderr. Works on plain ROS 2, without console.
 ROS_DISTRO="${ROS_DISTRO:-jazzy}"
 
-apt_ensure \
-    python3-colcon-common-extensions \
-    python3-rosdep \
-    "ros-${ROS_DISTRO}-nav2-common" \
-    "ros-${ROS_DISTRO}-teleop-twist-keyboard" \
+PACKAGES=(
+    python3-colcon-common-extensions
+    python3-rosdep
+    "ros-${ROS_DISTRO}-nav2-common"
+    "ros-${ROS_DISTRO}-teleop-twist-keyboard"
     "ros-${ROS_DISTRO}-rmw-fastrtps-cpp"
+)
+
+# Handled before _common.sh, whose root check would fail for a normal user.
+if [ "${1:-}" = "--check" ]; then
+    missing=()
+    for pkg in "${PACKAGES[@]}"; do
+        if ! dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "install ok installed"; then
+            missing+=("$pkg")
+        fi
+    done
+    if [ ${#missing[@]} -ne 0 ]; then
+        echo "missing: ${missing[*]}" >&2
+        exit 1
+    fi
+    exit 0
+fi
+
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+
+apt_ensure "${PACKAGES[@]}"
